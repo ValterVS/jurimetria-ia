@@ -1,0 +1,27 @@
+# Dependências
+node_modules/
+
+# Variáveis de ambiente (nunca versionar segredos reais)
+.env
+.env.local
+.env.*.local
+.env.production
+
+# Builds
+frontend/dist/
+frontend/build/
+backend/dist/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Arquivos temporários de upload (documentos jurídicos não devem ir pro repo)
+backend/uploads/
+backend/tmp/
+
+# Sistema operacional / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
