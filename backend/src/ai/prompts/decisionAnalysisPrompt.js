@@ -22,7 +22,7 @@ REGRAS OBRIGATÓRIAS - VOCÊ NUNCA DEVE:
 QUANDO NÃO CONSEGUIR IDENTIFICAR UMA INFORMAÇÃO:
 - Para campos de texto (nome, número de processo, tribunal, comarca, vara, data), retorne null.
 - Para o resultado de um pedido ou o resultado geral, retorne "nao_identificado".
-- Nunca deixe de retornar um campo do schema: se a informação não existe no texto, o valor correto é null (ou "nao_identificado" quando aplicável), não uma invenção plausível.
+- Nunca deixe de retornar um campo do schema: se a informação não existe no texto, o valor correto é null (ou "nao_identificado" quando aplicável), não uma invenção plausível. Exceção: "descricao" dos pedidos e os campos tipo_acordao, relator, desembargador1 e desembargador2 usam string vazia ("") em vez de null.
 
 O QUE VOCÊ DEVE FAZER:
 1. Identificar se o documento é uma sentença, um acórdão, um despacho, uma intimação, uma decisão interlocutória ou uma decisão declaratória.
@@ -33,16 +33,16 @@ O QUE VOCÊ DEVE FAZER:
 6. Para CADA pedido individual tratado na decisão, identificar: o nome do pedido, o resultado (procedente, improcedente, parcialmente_procedente, objeto_de_transação ou nao_identificado), o valor associado quando houver, uma fundamentação resumida e um trecho relevante do texto que sustente essa classificação.
    - Use um nome curto e genérico para o tipo de pedido (ex.: "Danos morais", "Horas extras"), sem incluir o fundamento no nome.
    - Quando a decisão tratar do MESMO tipo de pedido mais de uma vez com fundamentos diferentes (ex.: danos morais pela rescisão e danos morais por dano existencial), liste CADA um como um item separado, com seu próprio resultado, e preencha "descricao" com o fundamento que os diferencia (ex.: "em razão da rescisão", "dano existencial"). Nunca junte pedidos distintos em um único item.
-   - Quando o tipo de pedido aparecer uma única vez, "descricao" deve ser null.
+   - Quando o tipo de pedido aparecer uma única vez, "descricao" deve ser uma string vazia ("").
 7. Identificar o resultado geral da decisão: procedente, improcedente, parcialmente_procedente, objeto_de_transação ou nao_identificado.
 8. Listar os principais pontos favoráveis e desfavoráveis identificados no texto (do ponto de vista de quem contesta a ação, quando isso for inferível objetivamente do teor da decisão).
 9. Identificar valores monetários explicitamente mencionados (condenação, custas, honorários), quando houver.
 10. Se o documento for um acórdão, preencher o bloco "acordao":
    - reforma_sentenca: true/false se houve reforma da sentença de origem, ou null se isso não estiver claro no texto.
-   - tipo_acordao: como o recurso foi decidido, em poucas palavras, conforme o texto (ex.: "Provido", "Parcialmente provido", "Não provido"); null se não estiver claro.
-   - relator: nome do desembargador relator, conforme escrito no texto; null se ausente.
-   - desembargador1 e desembargador2: nomes dos demais magistrados que compõem o órgão julgador (revisor/vogais), exceto o relator; null para cada um que não constar.
-   - Para tipo_documento diferente de acórdão, retorne null nesses campos.
+   - tipo_acordao: como o recurso foi decidido, em poucas palavras, conforme o texto (ex.: "Provido", "Parcialmente provido", "Não provido"); string vazia ("") se não estiver claro.
+   - relator: nome do desembargador relator, conforme escrito no texto; string vazia se ausente.
+   - desembargador1 e desembargador2: nomes dos demais magistrados que compõem o órgão julgador (revisor/vogais), exceto o relator; string vazia para cada um que não constar.
+   - Para tipo_documento diferente de acórdão, retorne string vazia nesses campos.
 11. Registrar em "observacoes" qualquer ambiguidade, trecho de difícil interpretação, ou limitação encontrada na análise.
 12. Marcar "necessita_revisao_humana" como true sempre que houver ambiguidade relevante, informação contraditória, texto truncado/incompleto, ou qualquer situação em que a classificação automática tenha baixa confiança.
 

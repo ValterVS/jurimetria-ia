@@ -43,8 +43,9 @@ Anote cada valor que for pedido; vários passos dependem do anterior.
 O plano gratuito do Render **bloqueia SMTP** (portas 25/465/587), então o Gmail não funciona em produção. O sistema envia por HTTPS pela Brevo (grátis, 300 e-mails/dia).
 
 1. Crie a conta em brevo.com.
-2. **SMTP & API → API Keys → Generate a new API key**. Copie a chave (`BREVO_API_KEY`).
-3. **Senders, Domains & Dedicated IPs → Senders**: o e-mail da sua conta já vale como remetente; ele será o `EMAIL_FROM`.
+2. **Chave da API:** no canto inferior esquerdo, **Settings** → **SMTP & API** → aba **API Keys & MCP** → **Generate a new API key** (a Brevo pede um código de verificação). Dê um nome (ex.: `jurimetria`) e **copie a chave na hora**: ela só aparece uma vez. Essa é a `BREVO_API_KEY`. Use a aba **API Keys**, não a de **SMTP**: a chave SMTP não serve aqui.
+3. **Remetente:** **Settings** → **Senders, Domains, IPs** → **Senders** → **Add a sender**. Informe nome e e-mail e confirme o código de 6 dígitos que a Brevo manda para esse e-mail. Esse e-mail é o `EMAIL_FROM`. Remetente não verificado não envia.
+   - O ideal é um e-mail do seu domínio próprio (ex.: `contato@valtersilva.dev.br`). Com um endereço `@gmail.com` o envio funciona, mas os e-mails costumam cair no spam, porque a Brevo não consegue autenticar domínios gratuitos.
 
 > Plano B para a apresentação (não depende de e-mail): crie uma conta já verificada pelo terminal, com o `.env` apontando para o Supabase:
 > `npm run empresa:criar -- --email demo@exemplo.com --senha SuaSenha123 --nome "Escritório Demo" --vincular-seed`

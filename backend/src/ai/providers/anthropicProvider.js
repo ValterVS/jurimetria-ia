@@ -48,7 +48,9 @@ const ANALISE_JSON_SCHEMA = {
         type: 'object',
         properties: {
           nome: { type: 'string' },
-          descricao: { type: ['string', 'null'] },
+          // string vazia quando não há (evita mais um campo "nullable": a API
+          // limita a 16 parâmetros com union types no schema inteiro)
+          descricao: { type: 'string' },
           resultado: { type: 'string', enum: resultadoPedidoEnum.options },
           valor_identificado: { type: ['number', 'null'] },
           fundamentacao_resumida: { type: ['string', 'null'] },
@@ -74,10 +76,11 @@ const ANALISE_JSON_SCHEMA = {
       type: 'object',
       properties: {
         reforma_sentenca: { type: ['boolean', 'null'] },
-        tipo_acordao: { type: ['string', 'null'] },
-        relator: { type: ['string', 'null'] },
-        desembargador1: { type: ['string', 'null'] },
-        desembargador2: { type: ['string', 'null'] },
+        // string vazia quando o dado não consta no texto (ver nota sobre o limite de unions)
+        tipo_acordao: { type: 'string' },
+        relator: { type: 'string' },
+        desembargador1: { type: 'string' },
+        desembargador2: { type: 'string' },
       },
       required: ['reforma_sentenca', 'tipo_acordao', 'relator', 'desembargador1', 'desembargador2'],
       additionalProperties: false,
@@ -183,4 +186,4 @@ async function analyzeDecision({ texto, tipoDocumentoSugerido = null }) {
   };
 }
 
-module.exports = { analyzeDecision };
+module.exports = { analyzeDecision, ANALISE_JSON_SCHEMA };
