@@ -1,13 +1,9 @@
 const pool = require('../config/db');
 
-// Fábrica de repository para tabelas de catálogo simples: um id, uma coluna
-// de nome e, opcionalmente, uma FK para uma tabela "pai" (ex: comarca->tribunal,
-// vara->comarca, juiz->vara, desembargador->tribunal, ministro->tribunal).
-//
-// `table`, `idColumn`, `nameColumn` e `parentColumn` vêm sempre de configuração
-// fixa definida no próprio código (nunca de input do usuário), então
-// interpolar esses nomes na query é seguro - os VALORES continuam indo por
-// parâmetros ($1, $2...), o que é o que protege contra SQL Injection.
+// Fábrica de repository para tabelas de catálogo simples (id + nome +
+// FK opcional para uma tabela "pai"). Nomes de tabela/coluna vêm sempre
+// fixos do código, nunca de input do usuário; os valores sempre vão por
+// parâmetro ($1, $2...).
 function createCatalogRepository({ table, idColumn, nameColumn, parentColumn = null }) {
   const columns = parentColumn ? [idColumn, nameColumn, parentColumn] : [idColumn, nameColumn];
   const columnList = columns.join(', ');

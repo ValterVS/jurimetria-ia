@@ -8,11 +8,14 @@ import { useToast } from '../../contexts/ToastContext.jsx';
 import { criarAcordao } from '../../services/processos.service.js';
 import { analisarAcordao } from '../../services/acordaos.service.js';
 import { listarCadastro } from '../../services/cadastros.service.js';
+import CatalogCombobox from '../../components/ui/CatalogCombobox.jsx';
+import useCadastroNaHora, { paraOpcoes } from '../../hooks/useCadastroNaHora.js';
 
 export default function AdicionarAcordaoPage() {
   const { id: idProcesso } = useParams();
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const cadastrarNaHora = useCadastroNaHora();
 
   const [etapa, setEtapa] = useState('dados');
   const [acordao, setAcordao] = useState(null);
@@ -47,6 +50,18 @@ export default function AdicionarAcordaoPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const idStr = (id) => (id === '' ? '' : String(id));
+
+  const criarDesembargador = (nome) =>
+    cadastrarNaHora({
+      recurso: 'desembargadores',
+      payload: { nome_desembargador: nome },
+      campoNome: 'nome_desembargador',
+      idField: 'id_desembargador',
+      setLista: setDesembargadores,
+      rotulo: 'Desembargador',
+    });
+
   async function handleCriarAcordao(e) {
     e.preventDefault();
     setSalvando(true);
@@ -55,14 +70,14 @@ export default function AdicionarAcordaoPage() {
         id_relator: form.id_relator || null,
         id_desembargador1: form.id_desembargador1 || null,
         id_desembargador2: form.id_desembargador2 || null,
-        id_tipo_acordao: Number(form.id_tipo_acordao),
+        id_tipo_acordao: form.id_tipo_acordao ? Number(form.id_tipo_acordao) : null,
         data_acordao: form.data_acordao || null,
         id_tribunal: form.id_tribunal || null,
         reforma_sentenca: form.reforma_sentenca === '' ? null : form.reforma_sentenca === 'true',
       });
       setAcordao(criado);
       setEtapa('analise');
-      showToast('Acórdão cadastrado. Agora envie o texto para análise.', 'success');
+      showToast('Acórdão cadastrado. Agora envie o texto: a IA preenche os campos que ficaram em branco.', 'success');
     } catch (err) {
       showToast(err.friendlyMessage || 'Não foi possível cadastrar o acórdão.', 'error');
     } finally {
@@ -92,80 +107,72 @@ export default function AdicionarAcordaoPage() {
     <>
       <Header title="Adicionar acórdão" subtitle={`Processo #${idProcesso}`} />
       <div className="max-w-2xl space-y-6 p-8">
-        <Card title="1. Dados do acórdão">
+        <Card title="1. Dados do acórdão (todos opcionais)">
           <form onSubmit={handleCriarAcordao}>
-            <FormField label="Tipo de acórdão">
-              <Select
-                required
-                disabled={etapa === 'analise'}
-                value={form.id_tipo_acordao}
-                onChange={(e) => setForm({ ...form, id_tipo_acordao: e.target.value })}
-              >
-                <option value="">Selecione...</option>
-                {tiposAcordao.map((t) => (
-                  <option key={t.id_tipo_acordao} value={t.id_tipo_acordao}>
-                    {t.tipo_acordao}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-            <FormField label="Tribunal" hint="Opcional">
-              <Select
-                disabled={etapa === 'analise'}
-                value={form.id_tribunal}
-                onChange={(e) => setForm({ ...form, id_tribunal: e.target.value })}
-              >
-                <option value="">Selecione...</option>
-                {tribunais.map((t) => (
-                  <option key={t.id_tribunal} value={t.id_tribunal}>
-                    {t.nome_tribunal}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-            <FormField label="Relator" hint="Opcional">
-              <Select
-                disabled={etapa === 'analise'}
-                value={form.id_relator}
-                onChange={(e) => setForm({ ...form, id_relator: e.target.value })}
-              >
-                <option value="">Selecione...</option>
-                {desembargadores.map((d) => (
-                  <option key={d.id_desembargador} value={d.id_desembargador}>
-                    {d.nome_desembargador}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-            <FormField label="Desembargador 1" hint="Opcional">
-              <Select
-                disabled={etapa === 'analise'}
-                value={form.id_desembargador1}
-                onChange={(e) => setForm({ ...form, id_desembargador1: e.target.value })}
-              >
-                <option value="">Selecione...</option>
-                {desembargadores.map((d) => (
-                  <option key={d.id_desembargador} value={d.id_desembargador}>
-                    {d.nome_desembargador}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-            <FormField label="Desembargador 2" hint="Opcional">
-              <Select
-                disabled={etapa === 'analise'}
-                value={form.id_desembargador2}
-                onChange={(e) => setForm({ ...form, id_desembargador2: e.target.value })}
-              >
-                <option value="">Selecione...</option>
-                {desembargadores.map((d) => (
-                  <option key={d.id_desembargador} value={d.id_desembargador}>
-                    {d.nome_desembargador}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-            <FormField label="Data do acórdão" hint="Opcional">
+            <CatalogCombobox
+              label="Tipo de acórdão"
+              hint="Opcional - a IA preenche na análise"
+              disabled={etapa === 'analise'}
+              options={paraOpcoes(tiposAcordao, 'id_tipo_acordao', 'tipo_acordao')}
+              value={form.id_tipo_acordao}
+              onChange={(id) => setForm({ ...form, id_tipo_acordao: idStr(id) })}
+              onCreate={(nome) =>
+                cadastrarNaHora({
+                  recurso: 'tipos-acordao',
+                  payload: { tipo_acordao: nome },
+                  campoNome: 'tipo_acordao',
+                  idField: 'id_tipo_acordao',
+                  setLista: setTiposAcordao,
+                  rotulo: 'Tipo de acórdão',
+                })
+              }
+            />
+            <CatalogCombobox
+              label="Tribunal"
+              hint="Opcional - a IA preenche na análise"
+              disabled={etapa === 'analise'}
+              options={paraOpcoes(tribunais, 'id_tribunal', 'nome_tribunal')}
+              value={form.id_tribunal}
+              onChange={(id) => setForm({ ...form, id_tribunal: idStr(id) })}
+              onCreate={(nome) =>
+                cadastrarNaHora({
+                  recurso: 'tribunais',
+                  payload: { nome_tribunal: nome },
+                  campoNome: 'nome_tribunal',
+                  idField: 'id_tribunal',
+                  setLista: setTribunais,
+                  rotulo: 'Tribunal',
+                })
+              }
+            />
+            <CatalogCombobox
+              label="Relator"
+              hint="Opcional - a IA preenche na análise"
+              disabled={etapa === 'analise'}
+              options={paraOpcoes(desembargadores, 'id_desembargador', 'nome_desembargador')}
+              value={form.id_relator}
+              onChange={(id) => setForm({ ...form, id_relator: idStr(id) })}
+              onCreate={criarDesembargador}
+            />
+            <CatalogCombobox
+              label="Desembargador 1"
+              hint="Opcional - a IA preenche na análise"
+              disabled={etapa === 'analise'}
+              options={paraOpcoes(desembargadores, 'id_desembargador', 'nome_desembargador')}
+              value={form.id_desembargador1}
+              onChange={(id) => setForm({ ...form, id_desembargador1: idStr(id) })}
+              onCreate={criarDesembargador}
+            />
+            <CatalogCombobox
+              label="Desembargador 2"
+              hint="Opcional - a IA preenche na análise"
+              disabled={etapa === 'analise'}
+              options={paraOpcoes(desembargadores, 'id_desembargador', 'nome_desembargador')}
+              value={form.id_desembargador2}
+              onChange={(id) => setForm({ ...form, id_desembargador2: idStr(id) })}
+              onCreate={criarDesembargador}
+            />
+            <FormField label="Data do acórdão" hint="Opcional - a IA preenche na análise">
               <TextInput
                 type="date"
                 disabled={etapa === 'analise'}

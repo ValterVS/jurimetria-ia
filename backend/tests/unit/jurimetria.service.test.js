@@ -1,6 +1,40 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { calcularPercentuais, normalizarAnalises } = require('../../src/services/jurimetria.service');
+const { calcularPercentuais, agruparPorJuiz, agruparPorDesembargador, chancesDoJulgador } = require('../../src/services/jurimetria.service');
+
+test('jurimetria.service - agruparPorJuiz', async (t) => {
+  const linha = (id_juiz, nome_juiz, id_pedido, nome_pedido, v) => ({
+    id_juiz, nome_juiz, id_pedido, nome_pedido,
+    total: v[0] + v[1] + v[2] + v[3], procedentes: v[0], improcedentes: v[1], parciais: v[2], sem_resultado: v[3],
+  });
+
+  await t.test('soma os pedidos de cada juiz e calcula percentuais incluindo "sem resultado"', () => {
+    const [juiz] = agruparPorJuiz([
+      linha(1, 'Ana', 10, 'Horas extras', [3, 1, 0, 0]),
+      linha(1, 'Ana', 11, 'Danos morais', [0, 2, 0, 2]),
+    ]);
+    assert.equal(juiz.total, 8);
+    assert.equal(juiz.procedentes, 3);
+    assert.equal(juiz.improcedentes, 3);
+    assert.equal(juiz.sem_resultado, 2);
+    assert.equal(juiz.percentual_procedente, 37.5);
+    assert.equal(juiz.percentual_sem_resultado, 25);
+    assert.equal(juiz.pedidos.length, 2);
+    assert.equal(juiz.pedidos[0].percentual_procedente, 75);
+  });
+
+  await t.test('ordena os juízes por quantidade de pedidos julgados', () => {
+    const lista = agruparPorJuiz([
+      linha(1, 'Ana', 10, 'Horas extras', [1, 0, 0, 0]),
+      linha(2, 'Bruno', 10, 'Horas extras', [2, 2, 0, 0]),
+    ]);
+    assert.deepEqual(lista.map((j) => j.nome_juiz), ['Bruno', 'Ana']);
+  });
+
+  await t.test('sem linhas, devolve lista vazia', () => {
+    assert.deepEqual(agruparPorJuiz([]), []);
+  });
+});
 
 test('jurimetria.service - calcularPercentuais', async (t) => {
   await t.test('calcula os três percentuais somando 100% quando todos os casos estão cobertos', () => {
@@ -34,26 +68,50 @@ test('jurimetria.service - calcularPercentuais', async (t) => {
   });
 });
 
-test('jurimetria.service - normalizarAnalises', async (t) => {
-  await t.test('mapeia os rótulos de status para as chaves esperadas pelo frontend', () => {
-    const rows = [
-      { status: 'Pendente', total: 2 },
-      { status: 'Em Análise', total: 1 },
-      { status: 'Concluída', total: 5 },
-      { status: 'Erro', total: 1 },
-    ];
-    const resultado = normalizarAnalises(rows);
-    assert.deepEqual(resultado, { pendente: 2, em_analise: 1, concluida: 5, erro: 1, total: 9 });
+test('jurimetria.service - agruparPorDesembargador', async (t) => {
+  const linha = (id, nome, pedido, v) => ({
+    id_desembargador: id, nome_desembargador: nome, id_pedido: pedido, nome_pedido: `P${pedido}`,
+    total: 0, procedentes: 0, improcedentes: 0, parciais: 0, sem_resultado: 0, reformados: 0, ...v,
   });
 
-  await t.test('preenche com zero os status que não aparecem no resultado do banco', () => {
-    const rows = [{ status: 'Concluída', total: 3 }];
-    const resultado = normalizarAnalises(rows);
-    assert.deepEqual(resultado, { pendente: 0, em_analise: 0, concluida: 3, erro: 0, total: 3 });
+  await t.test('soma reformados por desembargador e por pedido', () => {
+    const [d] = agruparPorDesembargador([
+      linha(1, 'Ana', 1, { total: 4, procedentes: 3, improcedentes: 1, reformados: 2 }),
+      linha(1, 'Ana', 2, { total: 2, improcedentes: 2, reformados: 1 }),
+    ]);
+    assert.equal(d.total, 6);
+    assert.equal(d.reformados, 3);
+    assert.equal(d.pedidos[0].reformados, 2);
+    assert.equal(d.percentual_procedente, 50);
+  });
+});
+
+test('jurimetria.service - chancesDoJulgador', async (t) => {
+  await t.test('percentuais consideram só pedidos com resultado e apontam a tendência', () => {
+    const c = chancesDoJulgador({ procedentes: 3, improcedentes: 7, parciais: 0 });
+    assert.equal(c.decididos, 10);
+    assert.equal(c.chance_improcedente, 70);
+    assert.equal(c.chance_procedente, 30);
+    assert.equal(c.tendencia, 'improcedente');
+    assert.equal(c.amostra_pequena, false);
   });
 
-  await t.test('lida com lista vazia (nenhuma análise cadastrada ainda)', () => {
-    const resultado = normalizarAnalises([]);
-    assert.deepEqual(resultado, { pendente: 0, em_analise: 0, concluida: 0, erro: 0, total: 0 });
+  await t.test('amostra pequena e sem tendência em caso de empate ou ausência de dados', () => {
+    assert.equal(chancesDoJulgador({ procedentes: 1, improcedentes: 1, parciais: 0 }).tendencia, null);
+    assert.equal(chancesDoJulgador({ procedentes: 1, improcedentes: 1, parciais: 0 }).amostra_pequena, true);
+    const vazio = chancesDoJulgador({ procedentes: 0, improcedentes: 0, parciais: 0 });
+    assert.equal(vazio.decididos, 0);
+    assert.equal(vazio.tendencia, null);
+  });
+
+  await t.test('agruparPorJuiz ignora "sem resultado" nas chances e anexa fundamentos', () => {
+    const fundamentos = new Map([['1:10', [{ resultado: 'improcedente', texto: 'Sem prova do dano.' }]]]);
+    const [j] = agruparPorJuiz(
+      [{ id_juiz: 1, nome_juiz: 'Renata', id_pedido: 10, nome_pedido: 'Danos morais', total: 6, procedentes: 0, improcedentes: 2, parciais: 0, sem_resultado: 4 }],
+      fundamentos
+    );
+    assert.equal(j.percentual_sem_resultado, 66.7);
+    assert.equal(j.chance_improcedente, 100);
+    assert.equal(j.pedidos[0].fundamentos[0].texto, 'Sem prova do dano.');
   });
 });

@@ -57,13 +57,13 @@ export async function vincularPedidoAoProcesso(idProcesso, payload) {
   return data;
 }
 
-export async function atualizarPedidoDoProcesso(idProcesso, idPedido, payload) {
-  const { data } = await api.put(`/processos/${idProcesso}/pedidos/${idPedido}`, payload);
+export async function atualizarPedidoDoProcesso(idProcesso, idVinculo, payload) {
+  const { data } = await api.put(`/processos/${idProcesso}/pedidos/${idVinculo}`, payload);
   return data;
 }
 
-export async function removerPedidoDoProcesso(idProcesso, idPedido) {
-  await api.delete(`/processos/${idProcesso}/pedidos/${idPedido}`);
+export async function removerPedidoDoProcesso(idProcesso, idVinculo) {
+  await api.delete(`/processos/${idProcesso}/pedidos/${idVinculo}`);
 }
 
 // --- Sentenças e acórdãos do processo ---

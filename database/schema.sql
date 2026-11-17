@@ -11,6 +11,55 @@
 -- ============================================================
 
 -- ==========================
+-- 0. Empresas (contas de acesso ao sistema)
+-- Cada empresa cadastrada só enxerga os processos que ela mesma criou
+-- (ver id_empresa na tabela processos, seção 3). Catálogos institucionais
+-- (tribunal, comarca, vara, juiz, desembargador, ministro, tipos, pedidos)
+-- são dados de referência compartilhados entre todas as empresas.
+-- ==========================
+
+CREATE TABLE empresa (
+    id_empresa          INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    cnpj                VARCHAR(18) NOT NULL UNIQUE,
+    nome_empresa        VARCHAR(200) NOT NULL,
+    -- pessoa física responsável pelo cadastro (para vincular empresa <-> usuário
+    -- que fez o cadastro, já que hoje só existe uma conta por empresa)
+    nome_responsavel    VARCHAR(200) NOT NULL,
+    cpf_responsavel     VARCHAR(14) NOT NULL,
+    email               VARCHAR(255) NOT NULL UNIQUE,
+    senha_hash          VARCHAR(255) NOT NULL,
+    email_verificado    BOOLEAN NOT NULL DEFAULT FALSE,
+    criado_em           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Código de verificação de e-mail (2FA no cadastro), enviado por e-mail e
+-- guardado apenas com hash (sha256) - o código em texto puro nunca é
+-- persistido, só trafega no e-mail enviado à empresa.
+CREATE TABLE verificacao_email (
+    id_verificacao      INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id_empresa          INTEGER NOT NULL REFERENCES empresa(id_empresa) ON DELETE CASCADE,
+    codigo_hash         VARCHAR(64) NOT NULL,
+    expira_em           TIMESTAMP NOT NULL,
+    usado               BOOLEAN NOT NULL DEFAULT FALSE,
+    criado_em           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_verificacao_email_empresa ON verificacao_email(id_empresa);
+
+-- Token de redefinição de senha (esqueci minha senha), mesma lógica de
+-- hash do código de verificação acima.
+CREATE TABLE redefinicao_senha (
+    id_redefinicao      INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id_empresa          INTEGER NOT NULL REFERENCES empresa(id_empresa) ON DELETE CASCADE,
+    token_hash          VARCHAR(64) NOT NULL UNIQUE,
+    expira_em           TIMESTAMP NOT NULL,
+    usado               BOOLEAN NOT NULL DEFAULT FALSE,
+    criado_em           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_redefinicao_senha_empresa ON redefinicao_senha(id_empresa);
+
+-- ==========================
 -- 1. Catálogos institucionais
 -- ==========================
 
@@ -18,6 +67,74 @@ CREATE TABLE tribunal (
     id_tribunal     INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     nome_tribunal   VARCHAR(100) NOT NULL UNIQUE
 );
+
+-- Tribunais padrão do Judiciário brasileiro, para o usuário só selecionar
+-- (comarcas e varas são cadastradas na hora, pelo formulário do processo).
+-- A mesma lista está em database/tribunais_padrao.sql (idempotente), para
+-- completar bancos criados antes dela existir.
+INSERT INTO tribunal (nome_tribunal) VALUES
+    ('Supremo Tribunal Federal'),
+    ('Superior Tribunal de Justiça'),
+    ('Tribunal Superior do Trabalho'),
+    ('Tribunal Superior Eleitoral'),
+    ('Superior Tribunal Militar'),
+    ('Tribunal Regional Federal da 1ª Região'),
+    ('Tribunal Regional Federal da 2ª Região'),
+    ('Tribunal Regional Federal da 3ª Região'),
+    ('Tribunal Regional Federal da 4ª Região'),
+    ('Tribunal Regional Federal da 5ª Região'),
+    ('Tribunal Regional Federal da 6ª Região'),
+    ('Tribunal Regional do Trabalho da 1ª Região'),
+    ('Tribunal Regional do Trabalho da 2ª Região'),
+    ('Tribunal Regional do Trabalho da 3ª Região'),
+    ('Tribunal Regional do Trabalho da 4ª Região'),
+    ('Tribunal Regional do Trabalho da 5ª Região'),
+    ('Tribunal Regional do Trabalho da 6ª Região'),
+    ('Tribunal Regional do Trabalho da 7ª Região'),
+    ('Tribunal Regional do Trabalho da 8ª Região'),
+    ('Tribunal Regional do Trabalho da 9ª Região'),
+    ('Tribunal Regional do Trabalho da 10ª Região'),
+    ('Tribunal Regional do Trabalho da 11ª Região'),
+    ('Tribunal Regional do Trabalho da 12ª Região'),
+    ('Tribunal Regional do Trabalho da 13ª Região'),
+    ('Tribunal Regional do Trabalho da 14ª Região'),
+    ('Tribunal Regional do Trabalho da 15ª Região'),
+    ('Tribunal Regional do Trabalho da 16ª Região'),
+    ('Tribunal Regional do Trabalho da 17ª Região'),
+    ('Tribunal Regional do Trabalho da 18ª Região'),
+    ('Tribunal Regional do Trabalho da 19ª Região'),
+    ('Tribunal Regional do Trabalho da 20ª Região'),
+    ('Tribunal Regional do Trabalho da 21ª Região'),
+    ('Tribunal Regional do Trabalho da 22ª Região'),
+    ('Tribunal Regional do Trabalho da 23ª Região'),
+    ('Tribunal Regional do Trabalho da 24ª Região'),
+    ('Tribunal de Justiça do Acre'),
+    ('Tribunal de Justiça de Alagoas'),
+    ('Tribunal de Justiça do Amapá'),
+    ('Tribunal de Justiça do Amazonas'),
+    ('Tribunal de Justiça da Bahia'),
+    ('Tribunal de Justiça do Ceará'),
+    ('Tribunal de Justiça do Distrito Federal e dos Territórios'),
+    ('Tribunal de Justiça do Espírito Santo'),
+    ('Tribunal de Justiça de Goiás'),
+    ('Tribunal de Justiça do Maranhão'),
+    ('Tribunal de Justiça de Mato Grosso'),
+    ('Tribunal de Justiça de Mato Grosso do Sul'),
+    ('Tribunal de Justiça de Minas Gerais'),
+    ('Tribunal de Justiça do Pará'),
+    ('Tribunal de Justiça da Paraíba'),
+    ('Tribunal de Justiça do Paraná'),
+    ('Tribunal de Justiça de Pernambuco'),
+    ('Tribunal de Justiça do Piauí'),
+    ('Tribunal de Justiça do Rio de Janeiro'),
+    ('Tribunal de Justiça do Rio Grande do Norte'),
+    ('Tribunal de Justiça do Rio Grande do Sul'),
+    ('Tribunal de Justiça de Rondônia'),
+    ('Tribunal de Justiça de Roraima'),
+    ('Tribunal de Justiça de Santa Catarina'),
+    ('Tribunal de Justiça de São Paulo'),
+    ('Tribunal de Justiça de Sergipe'),
+    ('Tribunal de Justiça do Tocantins');
 
 CREATE TABLE comarca (
     id_comarca      INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -90,7 +207,8 @@ VALUES ('Em andamento'), ('Suspenso'), ('Arquivado'), ('Encerrado');
 
 CREATE TABLE processos (
     id_processo         INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    numero_processo     VARCHAR(48) UNIQUE NOT NULL,
+    id_empresa          INTEGER NOT NULL REFERENCES empresa(id_empresa),
+    numero_processo     VARCHAR(48) NOT NULL,
     categoria           VARCHAR(25),
     id_tribunal         INTEGER NOT NULL,
     id_comarca          INTEGER NOT NULL,
@@ -122,7 +240,13 @@ CREATE TABLE processos (
         FOREIGN KEY (id_desembargador) REFERENCES desembargador(id_desembargador),
 
     CONSTRAINT fk_processo_ministro
-        FOREIGN KEY (id_ministro) REFERENCES ministro(id_ministro)
+        FOREIGN KEY (id_ministro) REFERENCES ministro(id_ministro),
+
+    -- número de processo é único POR EMPRESA, não globalmente: duas
+    -- empresas diferentes (ex: escritórios de partes opostas) podem
+    -- acompanhar o mesmo processo real (mesmo número CNJ) de forma
+    -- independente no sistema.
+    CONSTRAINT uq_processos_empresa_numero UNIQUE (id_empresa, numero_processo)
 );
 
 -- ==========================
@@ -182,15 +306,44 @@ CREATE TABLE pedidos (
 -- [CORREÇÃO] Coluna "procedente BOOLEAN" substituída por "resultado" com
 -- 3 estados, para suportar pedidos parcialmente procedentes (regra de
 -- negócio explícita no fluxo de análise). Ver database/README.md, item 4.
+--
+-- Um mesmo pedido do catálogo pode aparecer mais de uma vez no processo quando
+-- há fundamentos distintos (ex: "Danos morais" por rescisão e "Danos morais"
+-- por dano existencial): a "descricao" diferencia os registros.
+--
+-- Guarda o resultado das duas instâncias, para os painéis de jurimetria:
+--   1º grau: resultado_sentenca + id_juiz (juiz que proferiu a sentença)
+--   2º grau: resultado_acordao  + id_desembargador (relator do acórdão)
+--   resultado = situação ATUAL do pedido (o acórdão substitui o da sentença);
+--   reformado = o acórdão mudou o resultado dado pela sentença.
+-- Preenchidos pela análise de IA (resultado NULL com juiz = "sem resultado").
 CREATE TABLE processo_pedidos (
+    id_processo_pedido INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     id_processo INTEGER NOT NULL,
     id_pedido   INTEGER NOT NULL,
+    descricao   VARCHAR(300),
     valor       NUMERIC(15,2),
     resultado   VARCHAR(25)
                 CHECK (resultado IN ('procedente', 'improcedente', 'parcialmente_procedente')),
+    id_juiz     INTEGER,
+    resultado_sentenca VARCHAR(25)
+                CHECK (resultado_sentenca IN ('procedente', 'improcedente', 'parcialmente_procedente')),
+    id_desembargador INTEGER,
+    resultado_acordao VARCHAR(25)
+                CHECK (resultado_acordao IN ('procedente', 'improcedente', 'parcialmente_procedente')),
+    reformado   BOOLEAN,
+    -- por que cada instância decidiu assim (resumo extraído pela IA); alimenta
+    -- a seção "por que decidiu assim" da jurimetria
+    fundamentacao_sentenca TEXT,
+    fundamentacao_acordao  TEXT,
 
-    CONSTRAINT pk_processo_pedidos
-        PRIMARY KEY (id_processo, id_pedido),
+    CONSTRAINT fk_processo_pedidos_juiz
+        FOREIGN KEY (id_juiz)
+        REFERENCES juiz(id_juiz),
+
+    CONSTRAINT fk_processo_pedidos_desembargador
+        FOREIGN KEY (id_desembargador)
+        REFERENCES desembargador(id_desembargador),
 
     CONSTRAINT fk_processo_pedidos_processo
         FOREIGN KEY (id_processo)
@@ -200,6 +353,10 @@ CREATE TABLE processo_pedidos (
         FOREIGN KEY (id_pedido)
         REFERENCES pedidos(id_pedido)
 );
+
+-- não permite o mesmo pedido com a mesma descrição duas vezes no processo
+CREATE UNIQUE INDEX uq_processo_pedidos_descricao
+    ON processo_pedidos (id_processo, id_pedido, lower(COALESCE(descricao, '')));
 
 -- ==========================
 -- 6. Status e Análise de Decisão (IA)
@@ -290,7 +447,7 @@ CREATE TABLE acordao (
     id_desembargador1   INTEGER,
     id_desembargador2   INTEGER,
     data_acordao        DATE,
-    id_tipo_acordao     INTEGER NOT NULL,
+    id_tipo_acordao     INTEGER,  -- opcional: a IA preenche na análise
     reforma_sentenca    BOOLEAN,
     id_tribunal         INTEGER,
     -- [CORREÇÃO] UNIQUE adicionado (mesmo motivo da sentença). Ver
@@ -325,6 +482,8 @@ CREATE TABLE acordao (
 -- item 5.
 -- ==========================
 
+CREATE INDEX idx_processos_empresa         ON processos(id_empresa);
+
 CREATE INDEX idx_comarca_tribunal          ON comarca(id_tribunal);
 CREATE INDEX idx_vara_comarca              ON vara(id_comarca);
 CREATE INDEX idx_juiz_vara                 ON juiz(id_vara);
@@ -342,7 +501,8 @@ CREATE INDEX idx_processos_data_distrib    ON processos(data_distribuicao);
 
 CREATE INDEX idx_processo_partes_parte     ON processo_partes(id_parte);
 CREATE INDEX idx_processo_pedidos_pedido   ON processo_pedidos(id_pedido);
-
+CREATE INDEX idx_processo_pedidos_juiz     ON processo_pedidos(id_juiz);
+CREATE INDEX idx_processo_pedidos_desemb   ON processo_pedidos(id_desembargador);
 CREATE INDEX idx_analise_decisao_status    ON analise_decisao(id_status_analise);
 CREATE INDEX idx_analise_decisao_data      ON analise_decisao(data_processamento);
 

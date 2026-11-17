@@ -1,8 +1,5 @@
 const pool = require('../config/db');
 
-// Join com analise_decisao/status_analise: por enquanto id_analise é
-// sempre NULL (a criação da análise acontece na Fase 7), mas o select já
-// vem preparado para exibir o status assim que o vínculo existir.
 const SELECT_BASE = `
   SELECT
     s.id_sentenca, s.id_processo, s.data_sentenca, s.id_analise,
@@ -66,8 +63,6 @@ async function remove(id) {
   return rowCount > 0;
 }
 
-// Usado pelo DecisionAnalysisService (Fase 7) para vincular a análise
-// recém-criada (status Pendente) à sentença, antes mesmo de chamar a IA.
 async function linkAnalise(id, idAnalise) {
   await pool.query('UPDATE sentenca SET id_analise = $1 WHERE id_sentenca = $2', [idAnalise, id]);
   return findById(id);

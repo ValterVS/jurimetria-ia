@@ -1,37 +1,36 @@
 const { z } = require('zod');
 
-// Schema estruturado da resposta da IA para análise de sentenças/acórdãos.
+// Schema da resposta da IA para análise de sentenças/acórdãos. Usado tanto
+// como referência do JSON Schema em anthropicProvider.js quanto para
+// validação independente no backend antes de persistir.
 //
-// Regra importante para Structured Outputs em modo estrito da Anthropic:
-// todo campo precisa estar sempre presente no objeto retornado. Por isso
-// usamos `.nullable()` (o campo existe, mas pode vir null) em vez de
-// `.optional()` (que removeria o campo) em qualquer informação que a IA
-// possa não conseguir identificar no documento.
-//
-// Este mesmo schema é usado em dois pontos:
-//   1) como referência para o JSON Schema escrito à mão em
-//      anthropicProvider.js (enviado à Anthropic via `output_config.format`,
-//      o recurso "Structured Outputs" da Claude API - ver comentário em
-//      anthropicProvider.js sobre por que o JSON Schema é escrito à mão em
-//      vez de gerado a partir deste schema Zod);
-//   2) como validação independente no backend antes de persistir
-//      (nunca confiamos apenas na garantia do lado da Anthropic).
-//
-// Observação de mapeamento para o banco (ver Fase 7):
-// 'nao_identificado' é um valor válido de resultado aqui, mas a coluna
-// processo_pedidos.resultado só aceita procedente/improcedente/
-// parcialmente_procedente (ou NULL). 'nao_identificado' deve ser
-// convertido para NULL ao persistir - NUNCA gravado como string na coluna.
+// 'nao_identificado' é convertido para NULL ao gravar em
+// processo_pedidos.resultado (a coluna não aceita essa string).
 
 const resultadoPedidoEnum = z.enum([
   'procedente',
   'improcedente',
   'parcialmente_procedente',
+  'objeto_de_transacao',
   'nao_identificado',
+]);
+
+// 'objeto_de_transacao' também é convertido para NULL ao gravar em
+// processo_pedidos.resultado, pelo mesmo motivo.
+const tipoDocumentoEnum = z.enum([
+  'sentenca',
+  'acordao',
+  'despacho',
+  'intimacao',
+  'decisao_interlocutoria',
+  'decisao_declaratoria',
 ]);
 
 const pedidoAnalisadoSchema = z.object({
   nome: z.string(),
+  // fundamento que diferencia pedidos de mesmo nome na mesma decisão (ex:
+  // "danos morais" por rescisão x por dano existencial); null se único
+  descricao: z.string().nullable().optional(),
   resultado: resultadoPedidoEnum,
   valor_identificado: z.number().nullable(),
   fundamentacao_resumida: z.string().nullable(),
@@ -56,19 +55,22 @@ const valoresIdentificadosSchema = z.object({
   honorarios: z.number().nullable(),
 });
 
-// Só é relevante quando tipo_documento = 'acordao'; para sentenças a IA
-// deve retornar este objeto com reforma_sentenca = null.
+// Relevante só quando tipo_documento = 'acordao'. Os campos de cadastro
+// (tipo, relator, desembargadores) são opcionais para aceitar análises antigas.
 const acordaoInfoSchema = z.object({
   reforma_sentenca: z.boolean().nullable(),
+  tipo_acordao: z.string().nullable().optional(),
+  relator: z.string().nullable().optional(),
+  desembargador1: z.string().nullable().optional(),
+  desembargador2: z.string().nullable().optional(),
 });
 
 const decisionAnalysisSchema = z.object({
-  tipo_documento: z.enum(['sentenca', 'acordao']),
+  tipo_documento: tipoDocumentoEnum,
   resumo: z.string(),
   processo: processoIdentificadoSchema,
   julgador: julgadorSchema,
-  // formato esperado 'AAAA-MM-DD' ou null; validação de formato estrita
-  // acontece no backend (Fase 7), não neste schema enviado à Anthropic.
+  // formato esperado 'AAAA-MM-DD' ou null
   data_decisao: z.string().nullable(),
   resultado_geral: resultadoPedidoEnum,
   pedidos: z.array(pedidoAnalisadoSchema),
@@ -80,4 +82,4 @@ const decisionAnalysisSchema = z.object({
   necessita_revisao_humana: z.boolean(),
 });
 
-module.exports = { decisionAnalysisSchema, resultadoPedidoEnum };
+module.exports = { decisionAnalysisSchema, resultadoPedidoEnum, tipoDocumentoEnum };

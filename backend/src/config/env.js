@@ -1,9 +1,5 @@
-// Validação leve das variáveis de ambiente na subida do servidor.
-// Não derruba o processo em desenvolvimento (facilita rodar sem tudo
-// configurado ainda), mas avisa claramente o que está faltando.
-// Em produção, variáveis essenciais ausentes geram um aviso alto no log
-// para que o problema seja percebido rápido no Render.
-
+// Validação leve das variáveis de ambiente na subida do servidor: não
+// derruba o processo, só avisa no log o que está faltando.
 const REQUIRED_ALWAYS = ['DATABASE_URL'];
 const REQUIRED_FOR_AI = ['ANTHROPIC_API_KEY'];
 

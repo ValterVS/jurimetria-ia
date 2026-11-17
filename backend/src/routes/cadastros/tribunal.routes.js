@@ -8,6 +8,7 @@ const service = createCatalogService({
   repository: tribunalRepository,
   resourceName: 'Tribunal',
   nameColumn: 'nome_tribunal',
+  normalizeNames: true,
 });
 
 const controller = createCatalogController({

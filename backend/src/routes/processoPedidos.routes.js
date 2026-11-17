@@ -7,7 +7,8 @@ const router = Router({ mergeParams: true });
 
 router.get('/', controller.list);
 router.post('/', validate(addSchema), controller.add);
-router.put('/:idPedido', validate(updateSchema), controller.update);
-router.delete('/:idPedido', controller.remove);
+// :idVinculo = id_processo_pedido (o mesmo pedido pode aparecer mais de uma vez)
+router.put('/:idVinculo', validate(updateSchema), controller.update);
+router.delete('/:idVinculo', controller.remove);
 
 module.exports = router;

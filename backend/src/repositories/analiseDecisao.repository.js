@@ -14,10 +14,20 @@ async function findById(id) {
   return rows[0] || null;
 }
 
-// Cria a análise já como 'Pendente' (DEFAULT da coluna id_status_analise
-// é 1 = Pendente, conforme database/schema.sql). É deliberadamente
-// chamada ANTES de qualquer processamento/chamada à IA - a decisão nunca
-// pode ficar sem registro de que uma análise foi solicitada.
+// análise não tem id_processo direto - pertence a uma sentença OU a um
+// acórdão, cada um vinculado a um processo. Usado só para checar posse
+// (empresa dona do processo) antes de expor a análise pelo id.
+async function findEmpresaId(id) {
+  const { rows } = await pool.query(
+    `SELECT p.id_empresa FROM sentenca s JOIN processos p ON p.id_processo = s.id_processo WHERE s.id_analise = $1
+     UNION
+     SELECT p.id_empresa FROM acordao a JOIN processos p ON p.id_processo = a.id_processo WHERE a.id_analise = $1`,
+    [id]
+  );
+  return rows[0]?.id_empresa ?? null;
+}
+
+// cria a análise já como 'Pendente' (DEFAULT da coluna id_status_analise)
 async function create() {
   const { rows } = await pool.query('INSERT INTO analise_decisao DEFAULT VALUES RETURNING id_analise');
   return findById(rows[0].id_analise);
@@ -33,8 +43,6 @@ async function updateStatus(id, statusLabel) {
   return findById(id);
 }
 
-// insightsJson é passado como objeto JS puro: o driver pg serializa
-// automaticamente para JSON ao gravar em coluna JSONB.
 async function markConcluida(id, { insightsJson, inputTokens, outputTokens, plataforma }) {
   await pool.query(
     `UPDATE analise_decisao
@@ -63,4 +71,4 @@ async function markErro(id, erroLog) {
   return findById(id);
 }
 
-module.exports = { findById, create, updateStatus, markConcluida, markErro };
+module.exports = { findById, findEmpresaId, create, updateStatus, markConcluida, markErro };

@@ -1,11 +1,8 @@
 const pool = require('../config/db');
 
-// Select com joins para retornar nomes legíveis (tribunal, comarca, vara,
-// situação, julgadores) junto com os ids, evitando que o frontend precise
-// resolver cada FK separadamente para exibir a listagem/detalhe do processo.
 const SELECT_BASE = `
   SELECT
-    p.id_processo, p.numero_processo, p.categoria, p.data_distribuicao, p.valor_causa,
+    p.id_processo, p.id_empresa, p.numero_processo, p.categoria, p.data_distribuicao, p.valor_causa,
     p.id_tribunal, t.nome_tribunal,
     p.id_comarca, c.nome_comarca,
     p.id_vara, v.nome_vara,
@@ -23,9 +20,6 @@ const SELECT_BASE = `
   LEFT JOIN ministro m ON m.id_ministro = p.id_ministro
 `;
 
-// Monta cláusula WHERE dinâmica a partir dos filtros informados. Nomes de
-// coluna são fixos (definidos aqui, nunca vindos do request); valores
-// sempre via parâmetros posicionais ($1, $2...).
 function buildWhere(filters) {
   const conditions = [];
   const params = [];
@@ -36,6 +30,9 @@ function buildWhere(filters) {
     conditions.push(`${column} ${operator} $${params.length}`);
   };
 
+  // id_empresa é sempre injetado pelo service a partir da empresa logada -
+  // nunca vem de input livre do usuário.
+  addCondition('p.id_empresa', filters.id_empresa);
   addCondition('p.id_tribunal', filters.id_tribunal);
   addCondition('p.id_comarca', filters.id_comarca);
   addCondition('p.id_vara', filters.id_vara);
@@ -73,19 +70,32 @@ async function findAll(filters = {}, { limit = 20, offset = 0 } = {}) {
   return { items: rows, total: countRows[0].total };
 }
 
-async function findById(id) {
-  const { rows } = await pool.query(`${SELECT_BASE} WHERE p.id_processo = $1`, [id]);
+// idEmpresa é opcional aqui para não obrigar todo chamador interno a
+// informá-lo, mas todo acesso vindo de uma rota HTTP deve sempre passá-lo.
+async function findById(id, idEmpresa) {
+  const conditions = ['p.id_processo = $1'];
+  const params = [id];
+  if (idEmpresa !== undefined && idEmpresa !== null) {
+    params.push(idEmpresa);
+    conditions.push(`p.id_empresa = $${params.length}`);
+  }
+  const { rows } = await pool.query(`${SELECT_BASE} WHERE ${conditions.join(' AND ')}`, params);
   return rows[0] || null;
 }
 
-async function findByNumero(numeroProcesso) {
-  const { rows } = await pool.query('SELECT id_processo FROM processos WHERE numero_processo = $1', [
-    numeroProcesso,
-  ]);
+async function findByNumero(numeroProcesso, idEmpresa) {
+  const conditions = ['numero_processo = $1'];
+  const params = [numeroProcesso];
+  if (idEmpresa !== undefined && idEmpresa !== null) {
+    params.push(idEmpresa);
+    conditions.push(`id_empresa = $${params.length}`);
+  }
+  const { rows } = await pool.query(`SELECT id_processo FROM processos WHERE ${conditions.join(' AND ')}`, params);
   return rows[0] || null;
 }
 
-const WRITABLE_COLUMNS = [
+const CREATE_COLUMNS = [
+  'id_empresa',
   'numero_processo',
   'categoria',
   'id_tribunal',
@@ -98,31 +108,42 @@ const WRITABLE_COLUMNS = [
   'id_desembargador',
   'id_ministro',
 ];
+// id_empresa não é alterável depois de criado o processo.
+const UPDATE_COLUMNS = CREATE_COLUMNS.filter((col) => col !== 'id_empresa');
 
 async function create(data) {
-  const values = WRITABLE_COLUMNS.map((col) => data[col] ?? null);
-  const placeholders = WRITABLE_COLUMNS.map((_, i) => `$${i + 1}`).join(', ');
+  const values = CREATE_COLUMNS.map((col) => data[col] ?? null);
+  const placeholders = CREATE_COLUMNS.map((_, i) => `$${i + 1}`).join(', ');
 
   const { rows } = await pool.query(
-    `INSERT INTO processos (${WRITABLE_COLUMNS.join(', ')}) VALUES (${placeholders}) RETURNING id_processo`,
+    `INSERT INTO processos (${CREATE_COLUMNS.join(', ')}) VALUES (${placeholders}) RETURNING id_processo`,
     values
   );
   return findById(rows[0].id_processo);
 }
 
-async function update(id, data) {
-  const values = WRITABLE_COLUMNS.map((col) => data[col] ?? null);
-  const setClause = WRITABLE_COLUMNS.map((col, i) => `${col} = $${i + 1}`).join(', ');
+async function update(id, data, idEmpresa) {
+  const values = UPDATE_COLUMNS.map((col) => data[col] ?? null);
+  const params = [...values, id];
+  let whereClause = `id_processo = $${params.length}`;
+  if (idEmpresa !== undefined && idEmpresa !== null) {
+    params.push(idEmpresa);
+    whereClause += ` AND id_empresa = $${params.length}`;
+  }
+  const setClause = UPDATE_COLUMNS.map((col, i) => `${col} = $${i + 1}`).join(', ');
 
-  await pool.query(`UPDATE processos SET ${setClause} WHERE id_processo = $${WRITABLE_COLUMNS.length + 1}`, [
-    ...values,
-    id,
-  ]);
-  return findById(id);
+  await pool.query(`UPDATE processos SET ${setClause} WHERE ${whereClause}`, params);
+  return findById(id, idEmpresa);
 }
 
-async function remove(id) {
-  const { rowCount } = await pool.query('DELETE FROM processos WHERE id_processo = $1', [id]);
+async function remove(id, idEmpresa) {
+  const params = [id];
+  let whereClause = 'id_processo = $1';
+  if (idEmpresa !== undefined && idEmpresa !== null) {
+    params.push(idEmpresa);
+    whereClause += ` AND id_empresa = $${params.length}`;
+  }
+  const { rowCount } = await pool.query(`DELETE FROM processos WHERE ${whereClause}`, params);
   return rowCount > 0;
 }
 

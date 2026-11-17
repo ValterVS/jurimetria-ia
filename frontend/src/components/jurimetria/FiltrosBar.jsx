@@ -4,11 +4,7 @@ import Button from '../ui/Button.jsx';
 import { listarCadastro } from '../../services/cadastros.service.js';
 import { listarPedidos } from '../../services/pedidos.service.js';
 
-// Filtros combináveis usados pela página de Jurimetria - espelham
-// exatamente jurimetriaFiltersSchema no backend (id_tribunal, id_comarca,
-// id_vara, id_juiz, id_desembargador, id_situacao, id_pedido, data_inicio,
-// data_fim). `filtros`/`onChange` são controlados pelo componente pai
-// (JurimetriaPage), que repassa o mesmo objeto para todas as abas.
+// filtros/onChange são controlados pelo componente pai (JurimetriaPage)
 export default function FiltrosBar({ filtros, onChange, onLimpar }) {
   const [tribunais, setTribunais] = useState([]);
   const [comarcas, setComarcas] = useState([]);
@@ -44,12 +40,14 @@ export default function FiltrosBar({ filtros, onChange, onLimpar }) {
 
   function set(campo, valor) {
     const novo = { ...filtros, [campo]: valor };
+    // "(todos)" = sem filtro: remove a chave em vez de guardar ''
+    if (valor === '') delete novo[campo];
     if (campo === 'id_tribunal') {
-      novo.id_comarca = '';
-      novo.id_vara = '';
+      delete novo.id_comarca;
+      delete novo.id_vara;
     }
     if (campo === 'id_comarca') {
-      novo.id_vara = '';
+      delete novo.id_vara;
     }
     onChange(novo);
   }

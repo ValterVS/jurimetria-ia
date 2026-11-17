@@ -3,16 +3,19 @@ import { useNavigate, useParams } from 'react-router-dom';
 import Header from '../../layouts/Header.jsx';
 import Card from '../../components/ui/Card.jsx';
 import Button from '../../components/ui/Button.jsx';
-import { FormField, Select, TextInput, Textarea } from '../../components/ui/FormField.jsx';
+import { FormField, TextInput, Textarea } from '../../components/ui/FormField.jsx';
 import { useToast } from '../../contexts/ToastContext.jsx';
 import { criarSentenca } from '../../services/processos.service.js';
 import { analisarSentenca } from '../../services/sentencas.service.js';
 import { listarCadastro } from '../../services/cadastros.service.js';
+import CatalogCombobox from '../../components/ui/CatalogCombobox.jsx';
+import useCadastroNaHora, { paraOpcoes } from '../../hooks/useCadastroNaHora.js';
 
 export default function AdicionarSentencaPage() {
   const { id: idProcesso } = useParams();
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const cadastrarNaHora = useCadastroNaHora();
 
   const [etapa, setEtapa] = useState('dados'); // 'dados' | 'analise'
   const [sentenca, setSentenca] = useState(null);
@@ -78,36 +81,42 @@ export default function AdicionarSentencaPage() {
       <div className="max-w-2xl space-y-6 p-8">
         <Card title="1. Dados da sentença">
           <form onSubmit={handleCriarSentenca}>
-            <FormField label="Juiz">
-              <Select
-                required
-                disabled={etapa === 'analise'}
-                value={form.id_juiz}
-                onChange={(e) => setForm({ ...form, id_juiz: e.target.value })}
-              >
-                <option value="">Selecione...</option>
-                {juizes.map((j) => (
-                  <option key={j.id_juiz} value={j.id_juiz}>
-                    {j.nome_juiz}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-            <FormField label="Tipo de sentença">
-              <Select
-                required
-                disabled={etapa === 'analise'}
-                value={form.id_tipo_sentenca}
-                onChange={(e) => setForm({ ...form, id_tipo_sentenca: e.target.value })}
-              >
-                <option value="">Selecione...</option>
-                {tiposSentenca.map((t) => (
-                  <option key={t.id_tipo_sentenca} value={t.id_tipo_sentenca}>
-                    {t.tipo_sentenca}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
+            <CatalogCombobox
+              label="Juiz"
+              required
+              disabled={etapa === 'analise'}
+              options={paraOpcoes(juizes, 'id_juiz', 'nome_juiz')}
+              value={form.id_juiz}
+              onChange={(id) => setForm({ ...form, id_juiz: id === '' ? '' : String(id) })}
+              onCreate={(nome) =>
+                cadastrarNaHora({
+                  recurso: 'juizes',
+                  payload: { nome_juiz: nome },
+                  campoNome: 'nome_juiz',
+                  idField: 'id_juiz',
+                  setLista: setJuizes,
+                  rotulo: 'Juiz',
+                })
+              }
+            />
+            <CatalogCombobox
+              label="Tipo de sentença"
+              required
+              disabled={etapa === 'analise'}
+              options={paraOpcoes(tiposSentenca, 'id_tipo_sentenca', 'tipo_sentenca')}
+              value={form.id_tipo_sentenca}
+              onChange={(id) => setForm({ ...form, id_tipo_sentenca: id === '' ? '' : String(id) })}
+              onCreate={(nome) =>
+                cadastrarNaHora({
+                  recurso: 'tipos-sentenca',
+                  payload: { tipo_sentenca: nome },
+                  campoNome: 'tipo_sentenca',
+                  idField: 'id_tipo_sentenca',
+                  setLista: setTiposSentenca,
+                  rotulo: 'Tipo de sentença',
+                })
+              }
+            />
             <FormField label="Data da sentença" hint="Opcional">
               <TextInput
                 type="date"

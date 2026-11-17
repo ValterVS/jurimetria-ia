@@ -14,9 +14,7 @@ export async function removerSentenca(id) {
   await api.delete(`/sentencas/${id}`);
 }
 
-// Envia a sentença para análise por IA. Aceita texto colado OU um arquivo
-// (PDF/TXT/DOCX) - nunca os dois processados no frontend: o arquivo, quando
-// presente, é enviado como multipart e o texto é extraído no backend.
+// aceita texto colado ou um arquivo (PDF/TXT/DOCX)
 export async function analisarSentenca(id, { texto, arquivo } = {}) {
   if (arquivo) {
     const formData = new FormData();

@@ -42,23 +42,23 @@ async function validateForeignKeys(data) {
   }
 }
 
-async function list(filters, pagination) {
-  return processoRepository.findAll(filters, pagination);
+async function list(filters, pagination, idEmpresa) {
+  return processoRepository.findAll({ ...filters, id_empresa: idEmpresa }, pagination);
 }
 
-async function getById(id) {
-  const processo = await processoRepository.findById(id);
+async function getById(id, idEmpresa) {
+  const processo = await processoRepository.findById(id, idEmpresa);
   if (!processo) {
     throw httpError(404, 'Processo não encontrado.');
   }
   return processo;
 }
 
-async function create(data) {
+async function create(data, idEmpresa) {
   await validateForeignKeys(data);
 
   try {
-    return await processoRepository.create(data);
+    return await processoRepository.create({ ...data, id_empresa: idEmpresa });
   } catch (error) {
     if (error.code === PG_UNIQUE_VIOLATION) {
       throw httpError(409, `Já existe um processo cadastrado com o número ${data.numero_processo}.`);
@@ -67,12 +67,12 @@ async function create(data) {
   }
 }
 
-async function update(id, data) {
-  await getById(id);
+async function update(id, data, idEmpresa) {
+  await getById(id, idEmpresa);
   await validateForeignKeys(data);
 
   try {
-    return await processoRepository.update(id, data);
+    return await processoRepository.update(id, data, idEmpresa);
   } catch (error) {
     if (error.code === PG_UNIQUE_VIOLATION) {
       throw httpError(409, `Já existe um processo cadastrado com o número ${data.numero_processo}.`);
@@ -81,10 +81,10 @@ async function update(id, data) {
   }
 }
 
-async function remove(id) {
-  await getById(id);
+async function remove(id, idEmpresa) {
+  await getById(id, idEmpresa);
   try {
-    await processoRepository.remove(id);
+    await processoRepository.remove(id, idEmpresa);
   } catch (error) {
     if (error.code === PG_FOREIGN_KEY_VIOLATION) {
       throw httpError(

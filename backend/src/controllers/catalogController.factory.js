@@ -32,6 +32,12 @@ function createCatalogController({ service, repository, resourceName }) {
     res.status(201).json(created);
   });
 
+  // 201 quando criou um registro novo, 200 quando devolveu um já existente
+  const findOrCreate = asyncHandler(async (req, res) => {
+    const { item, created } = await service.findOrCreate(req.body);
+    res.status(created ? 201 : 200).json(item);
+  });
+
   const update = asyncHandler(async (req, res) => {
     const id = parseId(req.params.id, resourceName);
     const updated = await service.update(id, req.body);
@@ -44,7 +50,7 @@ function createCatalogController({ service, repository, resourceName }) {
     res.status(204).send();
   });
 
-  return { list, getById, create, update, remove };
+  return { list, getById, create, findOrCreate, update, remove };
 }
 
 module.exports = { createCatalogController, parseId };

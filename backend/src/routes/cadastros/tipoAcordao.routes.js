@@ -8,6 +8,7 @@ const service = createCatalogService({
   repository: tipoAcordaoRepository,
   resourceName: 'Tipo de acórdão',
   nameColumn: 'tipo_acordao',
+  normalizeNames: true,
 });
 
 const controller = createCatalogController({

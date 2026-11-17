@@ -26,10 +26,10 @@ export default function PedidosTab({ idProcesso }) {
   const [salvando, setSalvando] = useState(false);
   const [todosPedidos, setTodosPedidos] = useState([]);
   const [modoNovoPedido, setModoNovoPedido] = useState(false);
-  const [form, setForm] = useState({ id_pedido: '', nome_pedido: '', valor: '' });
+  const [form, setForm] = useState({ id_pedido: '', nome_pedido: '', descricao: '', valor: '' });
 
   function abrirModal() {
-    setForm({ id_pedido: '', nome_pedido: '', valor: '' });
+    setForm({ id_pedido: '', nome_pedido: '', descricao: '', valor: '' });
     setModoNovoPedido(false);
     listarPedidos({ limit: 100 })
       .then((res) => setTodosPedidos(res.items || res))
@@ -48,6 +48,7 @@ export default function PedidosTab({ idProcesso }) {
       }
       await vincularPedidoAoProcesso(idProcesso, {
         id_pedido: Number(idPedido),
+        descricao: form.descricao.trim() === '' ? null : form.descricao.trim(),
         valor: form.valor === '' ? null : Number(form.valor),
       });
       showToast('Pedido vinculado ao processo.', 'success');
@@ -60,9 +61,9 @@ export default function PedidosTab({ idProcesso }) {
     }
   }
 
-  async function handleRemover(idPedido) {
+  async function handleRemover(idVinculo) {
     try {
-      await removerPedidoDoProcesso(idProcesso, idPedido);
+      await removerPedidoDoProcesso(idProcesso, idVinculo);
       showToast('Pedido desvinculado.', 'success');
       reload();
     } catch (err) {
@@ -77,20 +78,68 @@ export default function PedidosTab({ idProcesso }) {
       {pedidosVinculados.length === 0 ? (
         <EmptyState
           title="Nenhum pedido vinculado"
-          description="Vincule os pedidos tratados neste processo. O resultado de cada um é preenchido automaticamente pela análise de IA."
+          description="Vincule todos os pedidos deste processo antes de registrar uma sentença ou acórdão. Depois da análise de IA, o resultado, o juiz e o relator são preenchidos automaticamente; pedidos que a IA encontrar e não estiverem aqui são adicionados."
         />
       ) : (
         <Table
-          rowKey="id_pedido"
+          rowKey="id_processo_pedido"
           columns={[
-            { key: 'nome_pedido', header: 'Pedido' },
+            {
+              key: 'nome_pedido',
+              header: 'Pedido',
+              render: (r) => (
+                <div>
+                  <div>{r.nome_pedido}</div>
+                  {r.descricao && <div className="text-xs text-slate-500">{r.descricao}</div>}
+                </div>
+              ),
+            },
             { key: 'valor', header: 'Valor', render: (r) => formatarMoeda(r.valor) },
-            { key: 'resultado', header: 'Resultado', render: (r) => <ResultadoBadge resultado={r.resultado} /> },
+            {
+              key: 'resultado',
+              header: 'Resultado atual',
+              render: (r) => (
+                <div className="flex items-center gap-2">
+                  <ResultadoBadge resultado={r.resultado} />
+                  {r.reformado && (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                      Reformado
+                    </span>
+                  )}
+                </div>
+              ),
+            },
+            {
+              key: 'nome_juiz',
+              header: 'Juiz (1º grau)',
+              render: (r) =>
+                r.nome_juiz ? (
+                  <div>
+                    <div>{r.nome_juiz}</div>
+                    {r.resultado_sentenca && <ResultadoBadge resultado={r.resultado_sentenca} />}
+                  </div>
+                ) : (
+                  <span className="text-slate-400">Aguardando análise</span>
+                ),
+            },
+            {
+              key: 'nome_desembargador',
+              header: 'Relator (2º grau)',
+              render: (r) =>
+                r.nome_desembargador ? (
+                  <div>
+                    <div>{r.nome_desembargador}</div>
+                    {r.resultado_acordao && <ResultadoBadge resultado={r.resultado_acordao} />}
+                  </div>
+                ) : (
+                  <span className="text-slate-400">-</span>
+                ),
+            },
             {
               key: 'acoes',
               header: '',
               render: (r) => (
-                <button onClick={() => handleRemover(r.id_pedido)} className="text-slate-400 hover:text-red-600">
+                <button onClick={() => handleRemover(r.id_processo_pedido)} className="text-slate-400 hover:text-red-600">
                   <Trash2 className="h-4 w-4" />
                 </button>
               ),
@@ -140,6 +189,18 @@ export default function PedidosTab({ idProcesso }) {
               />
             </FormField>
           )}
+
+          <FormField
+            label="Descrição / fundamento"
+            hint="Opcional. Use para diferenciar pedidos de mesmo nome (ex.: danos morais pela rescisão x dano existencial)"
+          >
+            <TextInput
+              maxLength={300}
+              value={form.descricao}
+              onChange={(e) => setForm({ ...form, descricao: e.target.value })}
+              placeholder="Ex: em razão da rescisão"
+            />
+          </FormField>
 
           <FormField label="Valor" hint="Opcional">
             <TextInput

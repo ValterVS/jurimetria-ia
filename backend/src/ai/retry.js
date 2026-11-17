@@ -1,8 +1,4 @@
-// Retry controlado para falhas transitórias de rede/rate limit/erro 5xx do
-// provedor de IA (hoje: Anthropic). Deliberadamente limitado (poucas
-// tentativas, backoff curto) - não deve se transformar em retry ilimitado,
-// conforme exigência do projeto: uma falha real precisa terminar em status
-// "Erro", não ficar tentando para sempre.
+
 const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
 const MAX_ATTEMPTS = 3; // 1 tentativa original + 2 retries
 const BASE_DELAY_MS = 1000;

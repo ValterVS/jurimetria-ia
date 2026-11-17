@@ -1,16 +1,10 @@
-// Orquestra o fluxo completo de análise de uma decisão (sentença ou
-// acórdão) por IA, conforme o fluxo obrigatório do projeto:
-//
-//   1. registra a análise no banco como Pendente ANTES de qualquer
-//      chamada externa (a decisão nunca pode ficar sem esse registro);
-//   2. processa em segundo plano (Em Análise -> anonimiza -> chama a
-//      IA -> valida -> Concluída), sem bloquear a resposta HTTP;
-//   3. em caso de falha em qualquer etapa, marca Erro com erro_log,
-//      preservando a sentença/acórdão e a análise (nunca perde dado).
 const analiseDecisaoRepository = require('../repositories/analiseDecisao.repository');
 const sentencaRepository = require('../repositories/sentenca.repository');
 const acordaoRepository = require('../repositories/acordao.repository');
 const processoPedidoRepository = require('../repositories/processoPedido.repository');
+const pedidoRepository = require('../repositories/pedido.repository');
+const { normalizarChave, formatarNome } = require('../utils/nomeCatalogo');
+const { preencherAcordao } = require('./acordaoAutofill');
 const { getAIProvider } = require('./aiProvider');
 const { anonymize } = require('../services/anonymization.service');
 const { extractText } = require('../services/documentExtraction.service');
@@ -41,33 +35,120 @@ async function resolveInputText({ texto, arquivo }) {
   throw httpError(400, 'Envie o texto da decisão ou um arquivo (PDF, TXT ou DOCX).');
 }
 
-// Tenta casar cada pedido identificado pela IA (texto livre, ex: "Horas
-// extras") com os pedidos já cadastrados e vinculados a este processo,
-// por nome (case-insensitive). Pedidos sem correspondência são
-// ignorados: a IA nunca cria pedidos novos no catálogo automaticamente,
-// para não fragmentar a jurimetria com variações de texto livre - isso
-// fica a critério do usuário, cadastrando o pedido antes.
-async function applyPedidosResults(idProcesso, pedidosAnalisados) {
-  if (!Array.isArray(pedidosAnalisados) || pedidosAnalisados.length === 0) return;
+// processo_pedidos.resultado só aceita procedente/improcedente/
+// parcialmente_procedente (CHECK constraint); outros valores da IA viram
+// NULL nessa coluna, mas continuam preservados em insights_json.
+const RESULTADOS_NAO_PERSISTIVEIS = ['nao_identificado', 'objeto_de_transacao'];
 
-  const vinculados = await processoPedidoRepository.findByProcesso(idProcesso);
-  const porNome = new Map(vinculados.map((p) => [p.nome_pedido.trim().toLowerCase(), p]));
+// Acha (ou cria) o pedido no catálogo global pelo nome, ignorando
+// maiúsculas/acentos, para que "Danos morais" e "danos morais" sejam o mesmo.
+async function findOrCreatePedidoCatalogo(cache, nome) {
+  const chave = normalizarChave(nome);
+  if (cache.has(chave)) return cache.get(chave);
 
-  for (const pedidoIA of pedidosAnalisados) {
-    const chave = (pedidoIA.nome || '').trim().toLowerCase();
-    const vinculo = porNome.get(chave);
-    if (!vinculo) continue;
+  const criado = await pedidoRepository.create({ nome_pedido: formatarNome(nome) });
+  cache.set(chave, criado);
+  return criado;
+}
 
-    const resultado = pedidoIA.resultado === 'nao_identificado' ? null : pedidoIA.resultado;
-    const valor = pedidoIA.valor_identificado ?? vinculo.valor ?? null;
+// Procura, entre os vínculos ainda não usados nesta análise, o que corresponde
+// ao pedido da IA. `exato` exige nome + descrição iguais; sem `exato`, aceita
+// um vínculo de mesmo nome sem descrição (preenchido agora) ou, quando a IA
+// não trouxe descrição, o único vínculo de mesmo nome.
+function encontrarVinculo(vinculos, usados, pedidoIA, { exato, pedidosIA }) {
+  const nome = normalizarChave(pedidoIA.nome);
+  const descricao = normalizarChave(pedidoIA.descricao);
+  const candidatos = vinculos.filter(
+    (v) => !usados.has(v.id_processo_pedido) && normalizarChave(v.nome_pedido) === nome
+  );
 
-    await processoPedidoRepository.update(idProcesso, vinculo.id_pedido, { valor, resultado });
+  if (exato) {
+    return candidatos.find((v) => normalizarChave(v.descricao) === descricao) || null;
+  }
+  if (descricao) {
+    const semDescricao = candidatos.find((v) => !normalizarChave(v.descricao));
+    if (semDescricao) return semDescricao;
+    // Único pedido desse nome na decisão e único cadastrado com esse nome:
+    // é o mesmo pedido, só descrito com outras palavras.
+    const mesmoNomeNaDecisao = pedidosIA.filter((p) => normalizarChave(p.nome) === nome).length;
+    return mesmoNomeNaDecisao === 1 && candidatos.length === 1 ? candidatos[0] : null;
+  }
+  return candidatos[0] || null;
+}
+
+// Grava o resultado de cada pedido analisado nos vínculos do processo.
+//  - Pedidos de mesmo nome e fundamento diferente (descricao) viram vínculos
+//    distintos, cada um com seu resultado.
+//  - Pedido que a IA encontrou e ainda não estava cadastrado é criado já com
+//    o resultado.
+//  - SENTENÇA (1º grau): grava resultado_sentenca e o juiz; pedidos não
+//    mencionados pela IA ficam sem resultado para esse juiz.
+//  - ACÓRDÃO (2º grau): grava resultado_acordao e o relator, atualiza o status
+//    e sinaliza a reforma, sem tocar no juiz nem no resultado da sentença.
+async function applyPedidosResults(idProcesso, pedidosAnalisados, { tipoDecisao, idJuiz = null, idDesembargador = null } = {}) {
+  const pedidosIA = Array.isArray(pedidosAnalisados) ? pedidosAnalisados : [];
+  const vinculos = [...(await processoPedidoRepository.findByProcesso(idProcesso))];
+  const usados = new Set();
+  const casados = new Map(); // índice do pedido da IA -> vínculo
+
+  const resolver = (modo) => {
+    pedidosIA.forEach((pedidoIA, i) => {
+      if (casados.has(i)) return;
+      const vinculo = encontrarVinculo(vinculos, usados, pedidoIA, { ...modo, pedidosIA });
+      if (vinculo) {
+        casados.set(i, vinculo);
+        usados.add(vinculo.id_processo_pedido);
+      }
+    });
+  };
+  resolver({ exato: true });
+  resolver({ exato: false });
+
+  let catalogo = null;
+  for (let i = 0; i < pedidosIA.length; i += 1) {
+    const pedidoIA = pedidosIA[i];
+    if (!pedidoIA.nome || !pedidoIA.nome.trim()) continue;
+
+    let vinculo = casados.get(i);
+    const descricao = pedidoIA.descricao && pedidoIA.descricao.trim() ? pedidoIA.descricao.trim() : null;
+
+    if (!vinculo) {
+      if (!catalogo) {
+        const todos = await pedidoRepository.findAll();
+        catalogo = new Map(todos.map((p) => [normalizarChave(p.nome_pedido), p]));
+      }
+      const pedidoCatalogo = await findOrCreatePedidoCatalogo(catalogo, pedidoIA.nome);
+      vinculo = await processoPedidoRepository.create(idProcesso, {
+        id_pedido: pedidoCatalogo.id_pedido,
+        descricao,
+      });
+      vinculos.push(vinculo);
+      usados.add(vinculo.id_processo_pedido);
+    }
+
+    const dados = {
+      valor: pedidoIA.valor_identificado ?? null,
+      resultado: RESULTADOS_NAO_PERSISTIVEIS.includes(pedidoIA.resultado) ? null : pedidoIA.resultado,
+      descricao,
+      fundamentacao: pedidoIA.fundamentacao_resumida?.trim() || null,
+    };
+
+    if (tipoDecisao === 'acordao') {
+      await processoPedidoRepository.registrarAcordao(vinculo.id_processo_pedido, {
+        ...dados,
+        id_desembargador: idDesembargador,
+      });
+    } else {
+      await processoPedidoRepository.registrarSentenca(vinculo.id_processo_pedido, { ...dados, id_juiz: idJuiz });
+    }
+  }
+
+  if (tipoDecisao !== 'acordao' && idJuiz) {
+    const naoMencionados = vinculos.filter((v) => !usados.has(v.id_processo_pedido)).map((v) => v.id_processo_pedido);
+    await processoPedidoRepository.definirJuizNosPedidos(naoMencionados, idJuiz);
   }
 }
 
-// Só preenche reforma_sentenca via IA se o usuário ainda não tiver
-// definido esse campo manualmente ao cadastrar o acórdão (Fase 5) -
-// decisão deliberada para nunca sobrescrever dado humano em silêncio.
 async function applyReformaSentenca(idAcordao, reformaSentencaIA) {
   if (reformaSentencaIA === null || reformaSentencaIA === undefined) return;
 
@@ -97,7 +178,16 @@ async function processAnalysis({ tipoDecisao, idDecisao, idProcesso, idAnalise, 
       plataforma: resultado.model,
     });
 
-    await applyPedidosResults(idProcesso, resultado.data.pedidos);
+    let decisao = await DECISION_REPOSITORIES[tipoDecisao].findById(idDecisao);
+    if (tipoDecisao === 'acordao') {
+      // antes dos pedidos: o relator preenchido aqui é o julgador de 2º grau
+      decisao = await preencherAcordao(decisao, resultado.data);
+    }
+    await applyPedidosResults(idProcesso, resultado.data.pedidos, {
+      tipoDecisao,
+      idJuiz: tipoDecisao === 'sentenca' ? decisao?.id_juiz ?? null : null,
+      idDesembargador: tipoDecisao === 'acordao' ? decisao?.id_relator ?? null : null,
+    });
 
     if (tipoDecisao === 'acordao') {
       await applyReformaSentenca(idDecisao, resultado.data.acordao?.reforma_sentenca ?? null);
@@ -133,18 +223,9 @@ async function startAnalysis({ tipoDecisao, idDecisao, texto, arquivo }) {
     // (a antiga fica preservada na tabela, para auditoria).
   }
 
-  // Passo 1, obrigatório antes de qualquer chamada externa: registra a
-  // existência da análise (status Pendente) e vincula à decisão.
   const analise = await analiseDecisaoRepository.create();
   await repository.linkAnalise(idDecisao, analise.id_analise);
 
-  // Processamento em segundo plano: a resposta HTTP não fica bloqueada
-  // esperando a Anthropic (pode levar dezenas de segundos). O frontend
-  // acompanha via polling em GET /api/analises/:id. Limitação MVP
-  // conhecida: se o processo Node reiniciar no meio do processamento, a
-  // análise fica presa em "Em Análise" (sem fila/worker persistente
-  // nesta versão) - aceitável para o escopo do protótipo, documentado
-  // aqui para não ser esquecido.
   processAnalysis({
     tipoDecisao,
     idDecisao,
@@ -159,16 +240,20 @@ async function startAnalysis({ tipoDecisao, idDecisao, texto, arquivo }) {
   return analise;
 }
 
-async function getAnalysisById(id) {
+// idEmpresa é opcional só para não quebrar chamadas internas (ex: testes);
+// toda chamada vinda de uma rota HTTP deve sempre informá-lo.
+async function getAnalysisById(id, idEmpresa) {
   const analise = await analiseDecisaoRepository.findById(id);
   if (!analise) {
     throw httpError(404, 'Análise não encontrada.');
   }
+  if (idEmpresa !== undefined && idEmpresa !== null) {
+    const empresaDona = await analiseDecisaoRepository.findEmpresaId(id);
+    if (empresaDona !== idEmpresa) {
+      throw httpError(404, 'Análise não encontrada.');
+    }
+  }
   return analise;
 }
 
-// processAnalysis também é exportado (além de startAnalysis, que é o que
-// as rotas realmente usam) só para permitir testar o fluxo de
-// processamento em segundo plano de forma determinística (await direto),
-// sem depender de timing de fire-and-forget - ver tests/decisionAnalysisService.test.js.
 module.exports = { startAnalysis, getAnalysisById, processAnalysis };

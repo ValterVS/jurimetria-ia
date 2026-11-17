@@ -1,9 +1,6 @@
 const pool = require('../config/db');
 
 // GET /api/health
-// Usado para checar rapidamente se o backend está no ar durante
-// apresentações e testes (inclusive após cold start em plano gratuito).
-// Não expõe detalhes de configuração nem mensagens de erro do banco.
 async function getHealth(req, res) {
   const response = {
     status: 'ok',

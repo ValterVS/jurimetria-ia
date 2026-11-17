@@ -10,6 +10,7 @@ const service = createCatalogService({
   nameColumn: 'nome_comarca',
   parentRepository: tribunalRepository,
   parentRequired: true, // comarca.id_tribunal é NOT NULL no schema
+  normalizeNames: true,
 });
 
 const controller = createCatalogController({

@@ -5,13 +5,15 @@ import Card from '../../components/ui/Card.jsx';
 import Button from '../../components/ui/Button.jsx';
 import { FormField, TextInput, Select } from '../../components/ui/FormField.jsx';
 import LoadingState from '../../components/ui/LoadingState.jsx';
+import CatalogCombobox from '../../components/ui/CatalogCombobox.jsx';
 import { useToast } from '../../contexts/ToastContext.jsx';
 import { buscarProcesso, criarProcesso, atualizarProcesso } from '../../services/processos.service.js';
 import { listarCadastro } from '../../services/cadastros.service.js';
+import useCadastroNaHora from '../../hooks/useCadastroNaHora.js';
 
 const ESTADO_INICIAL = {
   numero_processo: '',
-  categoria: '',
+  categoria: 'Trabalhista',
   id_tribunal: '',
   id_comarca: '',
   id_vara: '',
@@ -25,6 +27,7 @@ export default function ProcessoFormPage() {
   const editando = Boolean(id);
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const cadastrarNaHora = useCadastroNaHora();
 
   const [form, setForm] = useState(ESTADO_INICIAL);
   const [tribunais, setTribunais] = useState([]);
@@ -149,46 +152,62 @@ export default function ProcessoFormPage() {
                 placeholder="Ex: Trabalhista"
               />
             </FormField>
-            <FormField label="Tribunal">
-              <Select required value={form.id_tribunal} onChange={(e) => handleChange('id_tribunal', e.target.value)}>
-                <option value="">Selecione...</option>
-                {tribunais.map((t) => (
-                  <option key={t.id_tribunal} value={t.id_tribunal}>
-                    {t.nome_tribunal}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-            <FormField label="Comarca">
-              <Select
-                required
-                disabled={!form.id_tribunal}
-                value={form.id_comarca}
-                onChange={(e) => handleChange('id_comarca', e.target.value)}
-              >
-                <option value="">Selecione...</option>
-                {comarcas.map((c) => (
-                  <option key={c.id_comarca} value={c.id_comarca}>
-                    {c.nome_comarca}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-            <FormField label="Vara">
-              <Select
-                required
-                disabled={!form.id_comarca}
-                value={form.id_vara}
-                onChange={(e) => handleChange('id_vara', e.target.value)}
-              >
-                <option value="">Selecione...</option>
-                {varas.map((v) => (
-                  <option key={v.id_vara} value={v.id_vara}>
-                    {v.nome_vara}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
+            <CatalogCombobox
+              label="Tribunal"
+              required
+              options={tribunais.map((t) => ({ id: t.id_tribunal, nome: t.nome_tribunal }))}
+              value={form.id_tribunal}
+              onChange={(id) => handleChange('id_tribunal', id === '' ? '' : String(id))}
+              onCreate={(nome) =>
+                cadastrarNaHora({
+                  recurso: 'tribunais',
+                  payload: { nome_tribunal: nome },
+                  campoNome: 'nome_tribunal',
+                  idField: 'id_tribunal',
+                  setLista: setTribunais,
+                  rotulo: 'Tribunal',
+                })
+              }
+              hint="Escolha da lista ou digite para cadastrar um novo."
+            />
+            <CatalogCombobox
+              label="Comarca"
+              required
+              disabled={!form.id_tribunal}
+              options={comarcas.map((c) => ({ id: c.id_comarca, nome: c.nome_comarca }))}
+              value={form.id_comarca}
+              onChange={(id) => handleChange('id_comarca', id === '' ? '' : String(id))}
+              onCreate={(nome) =>
+                cadastrarNaHora({
+                  recurso: 'comarcas',
+                  payload: { nome_comarca: nome, id_tribunal: Number(form.id_tribunal) },
+                  campoNome: 'nome_comarca',
+                  idField: 'id_comarca',
+                  setLista: setComarcas,
+                  rotulo: 'Comarca',
+                })
+              }
+              hint={form.id_tribunal ? 'Só aparecem as comarcas do tribunal escolhido.' : 'Escolha o tribunal primeiro.'}
+            />
+            <CatalogCombobox
+              label="Vara"
+              required
+              disabled={!form.id_comarca}
+              options={varas.map((v) => ({ id: v.id_vara, nome: v.nome_vara }))}
+              value={form.id_vara}
+              onChange={(id) => handleChange('id_vara', id === '' ? '' : String(id))}
+              onCreate={(nome) =>
+                cadastrarNaHora({
+                  recurso: 'varas',
+                  payload: { nome_vara: nome, id_comarca: Number(form.id_comarca) },
+                  campoNome: 'nome_vara',
+                  idField: 'id_vara',
+                  setLista: setVaras,
+                  rotulo: 'Vara',
+                })
+              }
+              hint={form.id_comarca ? 'Só aparecem as varas da comarca escolhida.' : 'Escolha a comarca primeiro.'}
+            />
             <FormField label="Situação">
               <Select required value={form.id_situacao} onChange={(e) => handleChange('id_situacao', e.target.value)}>
                 <option value="">Selecione...</option>

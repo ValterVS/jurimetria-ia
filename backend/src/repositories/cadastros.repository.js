@@ -1,7 +1,4 @@
 // Instâncias únicas dos repositories de catálogo (tabelas de apoio).
-// Centralizadas aqui para que tanto as rotas de cadastro quanto os
-// services de processos/decisões (que precisam validar FKs) usem sempre
-// a mesma configuração de tabela/coluna.
 const { createCatalogRepository } = require('./catalogRepository.factory');
 
 const tribunalRepository = createCatalogRepository({

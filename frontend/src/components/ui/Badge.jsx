@@ -29,12 +29,14 @@ const RESULTADO_COLOR = {
   procedente: 'green',
   improcedente: 'red',
   parcialmente_procedente: 'amber',
+  objeto_de_transacao: 'blue',
 };
 
 const RESULTADO_LABEL = {
   procedente: 'Procedente',
   improcedente: 'Improcedente',
   parcialmente_procedente: 'Parcialmente procedente',
+  objeto_de_transacao: 'Objeto de transação',
 };
 
 export function ResultadoBadge({ resultado }) {

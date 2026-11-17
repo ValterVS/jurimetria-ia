@@ -1,8 +1,6 @@
 const { httpError } = require('../utils/httpError');
 
-// Carregamento tardio (lazy require) das libs de parsing: assim o custo
-// de inicialização delas só é pago quando um arquivo daquele tipo é
-// realmente enviado.
+// lazy require: só carrega a lib quando o tipo de arquivo é realmente usado
 async function extractFromPdf(buffer) {
   const pdfParse = require('pdf-parse');
   const data = await pdfParse(buffer);
@@ -34,8 +32,7 @@ async function extractText(file) {
   }
 
   if (!texto || !texto.trim()) {
-    // Cobre principalmente o caso de PDF escaneado (imagem) sem camada de
-    // texto - OCR não é requisito deste MVP (seção 10 do escopo).
+    // caso comum: PDF escaneado (imagem) sem camada de texto - sem OCR neste MVP
     throw httpError(
       422,
       'Não foi possível extrair texto deste arquivo. Se for um PDF escaneado (imagem), ele precisa de OCR, que não é suportado nesta versão - envie o texto diretamente.'

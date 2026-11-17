@@ -34,6 +34,12 @@ export async function criarCadastro(recurso, payload) {
   return data;
 }
 
+// Devolve o registro que já existe (ignorando maiúscula/acento) ou cria um novo.
+export async function obterOuCriarCadastro(recurso, payload) {
+  const { data, status } = await api.post(`${getResourcePath(recurso)}/obter-ou-criar`, payload);
+  return { item: data, criado: status === 201 };
+}
+
 export async function atualizarCadastro(recurso, id, payload) {
   const { data } = await api.put(`${getResourcePath(recurso)}/${id}`, payload);
   return data;
@@ -44,10 +50,6 @@ export async function removerCadastro(recurso, id) {
 }
 
 // Configuração declarativa de cada um dos 9 cadastros auxiliares.
-// idField/campoNome usam exatamente os nomes de coluna do backend
-// (ver database/schema.sql) - nada aqui é inferido por heurística de
-// string (ex: singularizar "tribunais" -> "tribunal" quebraria para
-// plurais irregulares), tudo é declarado explicitamente.
 export const CADASTROS_CONFIG = [
   { chave: 'tribunais', titulo: 'Tribunais', idField: 'id_tribunal', campoNome: 'nome_tribunal' },
   {

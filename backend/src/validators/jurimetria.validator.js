@@ -1,9 +1,8 @@
 const { z } = require('zod');
 const { dateString } = require('./common');
 
-// Filtros combináveis, usados por todos os endpoints de /api/jurimetria
-// (seção 11 do escopo: "permitir filtros combinados").
-const jurimetriaFiltersSchema = z.object({
+// filtros combináveis, usados por todos os endpoints de /api/jurimetria
+const filtrosBase = z.object({
   id_tribunal: z.coerce.number().int().positive().optional(),
   id_comarca: z.coerce.number().int().positive().optional(),
   id_vara: z.coerce.number().int().positive().optional(),
@@ -14,5 +13,15 @@ const jurimetriaFiltersSchema = z.object({
   data_inicio: dateString.optional(),
   data_fim: dateString.optional(),
 });
+
+// selects do front enviam '' quando voltam para "(todos)": isso significa
+// "sem filtro", não um id inválido
+const jurimetriaFiltersSchema = z.preprocess(
+  (valor) =>
+    valor && typeof valor === 'object'
+      ? Object.fromEntries(Object.entries(valor).filter(([, v]) => v !== ''))
+      : valor,
+  filtrosBase
+);
 
 module.exports = { jurimetriaFiltersSchema };

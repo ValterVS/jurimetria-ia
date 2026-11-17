@@ -9,6 +9,7 @@ function createCatalogRouter({ controller, schema }) {
   router.get('/', controller.list);
   router.get('/:id', controller.getById);
   router.post('/', validate(schema), controller.create);
+  router.post('/obter-ou-criar', validate(schema), controller.findOrCreate);
   router.put('/:id', validate(schema), controller.update);
   router.delete('/:id', controller.remove);
 

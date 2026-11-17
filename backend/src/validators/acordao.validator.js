@@ -7,7 +7,7 @@ const acordaoSchema = z.object({
   id_desembargador1: z.coerce.number().int().positive().optional().nullable(),
   id_desembargador2: z.coerce.number().int().positive().optional().nullable(),
   data_acordao: dateString.optional().nullable(),
-  id_tipo_acordao: z.coerce.number().int().positive({ message: 'id_tipo_acordao é obrigatório.' }),
+  id_tipo_acordao: z.coerce.number().int().positive().optional().nullable(),
   reforma_sentenca: z.boolean().optional().nullable(),
   id_tribunal: z.coerce.number().int().positive().optional().nullable(),
 });

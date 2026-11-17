@@ -1,8 +1,4 @@
-// Pool de conexões PostgreSQL central. Usado por todos os repositories.
-//
-// SSL é habilitado automaticamente em produção porque provedores como
-// Neon, Supabase e Railway exigem conexão criptografada. Em desenvolvimento
-// local (Postgres sem SSL configurado), SSL fica desligado.
+// Pool de conexões PostgreSQL central, usado por todos os repositories.
 const { Pool } = require('pg');
 
 const pool = new Pool({
@@ -14,8 +10,6 @@ const pool = new Pool({
 });
 
 pool.on('error', (err) => {
-  // Erros em clientes ociosos do pool não devem derrubar o processo,
-  // mas precisam ser visíveis no log.
   console.error('[db] Erro inesperado no pool de conexões:', err.message);
 });
 

@@ -1,5 +1,6 @@
 const sentencaRepository = require('../repositories/sentenca.repository');
 const processoRepository = require('../repositories/processo.repository');
+const { ensurePedidosVinculados } = require('./processoPedido.service');
 const {
   juizRepository,
   tipoSentencaRepository,
@@ -9,8 +10,8 @@ const {
 } = require('../repositories/cadastros.repository');
 const { httpError } = require('../utils/httpError');
 
-async function ensureProcessoExists(idProcesso) {
-  const processo = await processoRepository.findById(idProcesso);
+async function ensureProcessoExists(idProcesso, idEmpresa) {
+  const processo = await processoRepository.findById(idProcesso, idEmpresa);
   if (!processo) {
     throw httpError(404, 'Processo não encontrado.');
   }
@@ -36,33 +37,39 @@ async function validateFKs(data, { requireJuizETipo }) {
   await ensureExists(varaRepository, data.id_vara, 'Vara');
 }
 
-async function listByProcesso(idProcesso) {
-  await ensureProcessoExists(idProcesso);
+async function listByProcesso(idProcesso, idEmpresa) {
+  await ensureProcessoExists(idProcesso, idEmpresa);
   return sentencaRepository.findByProcesso(idProcesso);
 }
 
-async function getById(id) {
+// idEmpresa é opcional: quando informado, confirma que a sentença
+// pertence a um processo da empresa logada antes de expor o registro.
+async function getById(id, idEmpresa) {
   const sentenca = await sentencaRepository.findById(id);
   if (!sentenca) {
     throw httpError(404, 'Sentença não encontrada.');
   }
+  if (idEmpresa !== undefined && idEmpresa !== null) {
+    await ensureProcessoExists(sentenca.id_processo, idEmpresa);
+  }
   return sentenca;
 }
 
-async function create(idProcesso, data) {
-  await ensureProcessoExists(idProcesso);
+async function create(idProcesso, data, idEmpresa) {
+  await ensureProcessoExists(idProcesso, idEmpresa);
+  await ensurePedidosVinculados(idProcesso);
   await validateFKs(data, { requireJuizETipo: true });
   return sentencaRepository.create({ ...data, id_processo: idProcesso });
 }
 
-async function update(id, data) {
-  await getById(id);
+async function update(id, data, idEmpresa) {
+  await getById(id, idEmpresa);
   await validateFKs(data, { requireJuizETipo: true });
   return sentencaRepository.update(id, data);
 }
 
-async function remove(id) {
-  await getById(id);
+async function remove(id, idEmpresa) {
+  await getById(id, idEmpresa);
   await sentencaRepository.remove(id);
 }
 

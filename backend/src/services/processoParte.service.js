@@ -6,8 +6,8 @@ const { httpError } = require('../utils/httpError');
 
 const PG_UNIQUE_VIOLATION = '23505';
 
-async function ensureProcessoExists(idProcesso) {
-  const processo = await processoRepository.findById(idProcesso);
+async function ensureProcessoExists(idProcesso, idEmpresa) {
+  const processo = await processoRepository.findById(idProcesso, idEmpresa);
   if (!processo) {
     throw httpError(404, 'Processo não encontrado.');
   }
@@ -21,13 +21,13 @@ async function ensureTipoParteExists(idTipoParte) {
   }
 }
 
-async function list(idProcesso) {
-  await ensureProcessoExists(idProcesso);
+async function list(idProcesso, idEmpresa) {
+  await ensureProcessoExists(idProcesso, idEmpresa);
   return processoParteRepository.findByProcesso(idProcesso);
 }
 
-async function add(idProcesso, data) {
-  await ensureProcessoExists(idProcesso);
+async function add(idProcesso, data, idEmpresa) {
+  await ensureProcessoExists(idProcesso, idEmpresa);
 
   const parte = await parteRepository.findById(data.id_parte);
   if (!parte) {
@@ -46,7 +46,8 @@ async function add(idProcesso, data) {
   }
 }
 
-async function update(idProcesso, idParte, data) {
+async function update(idProcesso, idParte, data, idEmpresa) {
+  await ensureProcessoExists(idProcesso, idEmpresa);
   const existing = await processoParteRepository.findOne(idProcesso, idParte);
   if (!existing) {
     throw httpError(404, 'Vínculo entre processo e parte não encontrado.');
@@ -57,7 +58,8 @@ async function update(idProcesso, idParte, data) {
   return processoParteRepository.update(idProcesso, idParte, data);
 }
 
-async function remove(idProcesso, idParte) {
+async function remove(idProcesso, idParte, idEmpresa) {
+  await ensureProcessoExists(idProcesso, idEmpresa);
   const existing = await processoParteRepository.findOne(idProcesso, idParte);
   if (!existing) {
     throw httpError(404, 'Vínculo entre processo e parte não encontrado.');

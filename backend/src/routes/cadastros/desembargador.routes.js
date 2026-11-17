@@ -10,6 +10,7 @@ const service = createCatalogService({
   nameColumn: 'nome_desembargador',
   parentRepository: tribunalRepository,
   parentRequired: false, // desembargador.id_tribunal é nullable no schema original
+  normalizeNames: true,
 });
 
 const controller = createCatalogController({

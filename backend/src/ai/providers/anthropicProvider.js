@@ -1,44 +1,24 @@
 const { getAnthropicClient } = require('../anthropicClient');
 const { callWithRetry } = require('../retry');
-const { decisionAnalysisSchema, resultadoPedidoEnum } = require('../schemas/decisionAnalysisSchema');
+const { decisionAnalysisSchema, resultadoPedidoEnum, tipoDocumentoEnum } = require('../schemas/decisionAnalysisSchema');
 const { DECISION_ANALYSIS_SYSTEM_PROMPT } = require('../prompts/decisionAnalysisPrompt');
 const { httpError } = require('../../utils/httpError');
 
-// Sonnet 5 usa effort "high" por padrão na API, e o parâmetro `effort`
-// afeta TODOS os tokens da resposta, inclusive o "pensamento" interno do
-// modelo (adaptive thinking) - esse pensamento consome do mesmo orçamento
-// de max_tokens que o JSON final. Para uma tarefa de extração/classificação
-// como esta (não é raciocínio complexo nem uso de ferramentas em várias
-// etapas), a própria documentação da Anthropic recomenda um effort mais
-// baixo. Reduzir para "medium" e aumentar a folga de max_tokens evita
-// truncar a resposta (stop_reason: 'max_tokens') antes do JSON estar
-// completo - foi exatamente isso que aconteceu com max_tokens: 4000 e o
-// effort padrão "high".
+// effort "medium" e max_tokens com folga evitam truncar a resposta
+// (stop_reason: 'max_tokens') antes do JSON estar completo.
 const DEFAULT_MAX_TOKENS = 8000;
 const DEFAULT_EFFORT = 'medium';
 const DEFAULT_MODEL = 'claude-sonnet-5';
 
-// JSON Schema enviado à Anthropic via `output_config.format` (recurso oficial
-// "Structured Outputs" da Claude API - https://platform.claude.com/docs/en/build-with-claude/structured-outputs,
-// verificado diretamente na documentação oficial nesta migração).
-//
-// Escrito à mão (não gerado a partir do Zod) de propósito: o pacote
-// @anthropic-ai/sdk efetivamente instalado neste projeto não inclui o helper
-// `zodOutputFormat` (isso já causou um erro real em produção local -
-// "Cannot find module .../helpers/zod.js" - porque a versão instalada só
-// expõe `helpers/beta/zod.js`, com um helper diferente, `betaZodTool`, para
-// outro caso de uso). Escrever o JSON Schema manualmente evita depender de
-// um helper que pode não existir na versão do SDK instalada pelo usuário, e
-// evita misturar a API do Zod v3 (usada em decisionAnalysisSchema.js) com a
-// API do Zod v4 que esse helper exigiria internamente.
-//
-// O `decisionAnalysisSchema` (Zod v3) continua sendo a fonte de verdade para
-// a validação independente da resposta, feita mais abaixo - nunca confiamos
-// apenas na garantia do lado da Anthropic.
+// JSON Schema enviado à Anthropic via `output_config.format` (Structured
+// Outputs). Escrito à mão em vez de gerado a partir do Zod, pois a versão
+// do SDK instalada não inclui o helper `zodOutputFormat` compatível com
+// Zod v3 (usado em decisionAnalysisSchema.js, que segue como fonte de
+// verdade para a validação independente feita mais abaixo).
 const ANALISE_JSON_SCHEMA = {
   type: 'object',
   properties: {
-    tipo_documento: { type: 'string', enum: ['sentenca', 'acordao'] },
+    tipo_documento: { type: 'string', enum: tipoDocumentoEnum.options },
     resumo: { type: 'string' },
     processo: {
       type: 'object',
@@ -68,12 +48,13 @@ const ANALISE_JSON_SCHEMA = {
         type: 'object',
         properties: {
           nome: { type: 'string' },
+          descricao: { type: ['string', 'null'] },
           resultado: { type: 'string', enum: resultadoPedidoEnum.options },
           valor_identificado: { type: ['number', 'null'] },
           fundamentacao_resumida: { type: ['string', 'null'] },
           trecho_relevante: { type: ['string', 'null'] },
         },
-        required: ['nome', 'resultado', 'valor_identificado', 'fundamentacao_resumida', 'trecho_relevante'],
+        required: ['nome', 'descricao', 'resultado', 'valor_identificado', 'fundamentacao_resumida', 'trecho_relevante'],
         additionalProperties: false,
       },
     },
@@ -93,8 +74,12 @@ const ANALISE_JSON_SCHEMA = {
       type: 'object',
       properties: {
         reforma_sentenca: { type: ['boolean', 'null'] },
+        tipo_acordao: { type: ['string', 'null'] },
+        relator: { type: ['string', 'null'] },
+        desembargador1: { type: ['string', 'null'] },
+        desembargador2: { type: ['string', 'null'] },
       },
-      required: ['reforma_sentenca'],
+      required: ['reforma_sentenca', 'tipo_acordao', 'relator', 'desembargador1', 'desembargador2'],
       additionalProperties: false,
     },
     observacoes: { type: 'array', items: { type: 'string' } },
@@ -118,20 +103,15 @@ const ANALISE_JSON_SCHEMA = {
   additionalProperties: false,
 };
 
-// Procura o primeiro bloco de texto na resposta. Com Structured Outputs, é
-// nele que vem o JSON (ver `output_config.format` acima); também é usado
-// para extrair a mensagem de recusa quando stop_reason === 'refusal'.
+// Primeiro bloco de texto da resposta: é onde vem o JSON, ou a mensagem
+// de recusa quando stop_reason === 'refusal'.
 function extractTextBlock(response) {
   const blocks = Array.isArray(response.content) ? response.content : [];
   const textBlock = blocks.find((b) => b.type === 'text');
   return textBlock ? textBlock.text : null;
 }
 
-// Implementação do contrato AIProvider (ver ../aiProvider.js) usando a API
-// de Mensagens da Anthropic com Structured Outputs (`output_config.format`,
-// tipo `json_schema`): a resposta vem garantidamente em JSON compatível com
-// o schema, num bloco de texto - sem necessidade de "tool use" nem de
-// helpers de conversão Zod->JSON Schema de terceiros.
+// Implementação do contrato AIProvider (ver ../aiProvider.js).
 async function analyzeDecision({ texto, tipoDocumentoSugerido = null }) {
   if (!texto || !texto.trim()) {
     throw httpError(400, 'Documento vazio: não há texto para enviar à análise de IA.');
@@ -161,10 +141,7 @@ async function analyzeDecision({ texto, tipoDocumentoSugerido = null }) {
       })
     );
   } catch (error) {
-    // Erros do SDK (rede, timeout, rate limit persistente após os
-    // retries, chave inválida etc). Nunca repassamos a mensagem crua do
-    // SDK/stack para além do necessário, mas mantemos texto suficiente
-    // para diagnóstico em erro_log.
+    // erros do SDK (rede, timeout, rate limit, chave inválida etc)
     throw httpError(502, `Falha na comunicação com a Anthropic: ${error.message}`);
   }
 
@@ -192,10 +169,7 @@ async function analyzeDecision({ texto, tipoDocumentoSugerido = null }) {
     throw httpError(502, 'A resposta da IA não pôde ser interpretada como JSON válido.');
   }
 
-  // Segunda validação, independente do que o Structured Outputs da Anthropic
-  // já garante: nunca usar a resposta da IA sem validar novamente no
-  // backend (com o schema Zod, fonte de verdade do projeto) antes de
-  // persistir.
+  // segunda validação independente, com Zod, antes de persistir
   const validation = decisionAnalysisSchema.safeParse(parsedOutput);
   if (!validation.success) {
     throw httpError(502, 'A resposta estruturada da IA não passou na validação do schema no backend.');

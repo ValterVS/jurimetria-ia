@@ -7,20 +7,38 @@ import LoadingState from '../../../components/ui/LoadingState.jsx';
 import EmptyState from '../../../components/ui/EmptyState.jsx';
 import { StatusAnaliseBadge } from '../../../components/ui/Badge.jsx';
 import { useApi } from '../../../hooks/useApi.js';
-import { listarSentencasDoProcesso, listarAcordaosDoProcesso } from '../../../services/processos.service.js';
+import {
+  listarSentencasDoProcesso,
+  listarAcordaosDoProcesso,
+  listarPedidosDoProcesso,
+} from '../../../services/processos.service.js';
 import { formatarData } from '../../../utils/formatters.js';
 
 export default function DecisoesTab({ idProcesso }) {
   const navigate = useNavigate();
   const { data: sentencas, loading: carregandoSentencas } = useApi(() => listarSentencasDoProcesso(idProcesso), [idProcesso]);
   const { data: acordaos, loading: carregandoAcordaos } = useApi(() => listarAcordaosDoProcesso(idProcesso), [idProcesso]);
+  const { data: pedidos, loading: carregandoPedidos } = useApi(() => listarPedidosDoProcesso(idProcesso), [idProcesso]);
+
+  // a análise grava o resultado nos pedidos, então eles vêm antes da decisão
+  const semPedidos = !carregandoPedidos && (pedidos || []).length === 0;
 
   return (
     <div className="space-y-6">
+      {semPedidos && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Vincule os pedidos do processo na aba <strong>Pedidos</strong> antes de registrar uma sentença ou um
+          acórdão. O resultado de cada pedido e o juiz que decidiu são preenchidos pela análise de IA.
+        </div>
+      )}
       <Card
         title="Sentenças"
         actions={
-          <Button variant="secondary" onClick={() => navigate(`/processos/${idProcesso}/sentencas/nova`)}>
+          <Button
+            variant="secondary"
+            disabled={carregandoPedidos || semPedidos}
+            onClick={() => navigate(`/processos/${idProcesso}/sentencas/nova`)}
+          >
             <Plus className="h-4 w-4" /> Adicionar sentença
           </Button>
         }
@@ -56,7 +74,11 @@ export default function DecisoesTab({ idProcesso }) {
       <Card
         title="Acórdãos"
         actions={
-          <Button variant="secondary" onClick={() => navigate(`/processos/${idProcesso}/acordaos/novo`)}>
+          <Button
+            variant="secondary"
+            disabled={carregandoPedidos || semPedidos}
+            onClick={() => navigate(`/processos/${idProcesso}/acordaos/novo`)}
+          >
             <Plus className="h-4 w-4" /> Adicionar acórdão
           </Button>
         }

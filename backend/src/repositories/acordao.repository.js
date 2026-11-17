@@ -10,7 +10,7 @@ const SELECT_BASE = `
     a.id_tribunal, t.nome_tribunal,
     sa.tipo_analise AS status_analise
   FROM acordao a
-  JOIN tipo_acordao ta ON ta.id_tipo_acordao = a.id_tipo_acordao
+  LEFT JOIN tipo_acordao ta ON ta.id_tipo_acordao = a.id_tipo_acordao
   LEFT JOIN desembargador dr ON dr.id_desembargador = a.id_relator
   LEFT JOIN desembargador d1 ON d1.id_desembargador = a.id_desembargador1
   LEFT JOIN desembargador d2 ON d2.id_desembargador = a.id_desembargador2
@@ -71,19 +71,48 @@ async function remove(id) {
   return rowCount > 0;
 }
 
-// Usado pelo DecisionAnalysisService (Fase 7) para vincular a análise
-// recém-criada (status Pendente) ao acórdão, antes mesmo de chamar a IA.
 async function linkAnalise(id, idAnalise) {
   await pool.query('UPDATE acordao SET id_analise = $1 WHERE id_acordao = $2', [idAnalise, id]);
   return findById(id);
 }
 
-// Atualização pontual (não usa update() genérico de propósito: update()
-// reescreve TODAS as colunas editáveis, e aqui queremos mexer só em
-// reforma_sentenca, sem risco de zerar os demais campos do acórdão).
+// atualização pontual, sem reescrever as demais colunas via update()
 async function updateReformaSentenca(id, reformaSentenca) {
   await pool.query('UPDATE acordao SET reforma_sentenca = $1 WHERE id_acordao = $2', [reformaSentenca, id]);
   return findById(id);
 }
 
-module.exports = { findByProcesso, findById, create, update, remove, linkAnalise, updateReformaSentenca };
+// Preenchimento pela IA: só grava nas colunas que ainda estão vazias, para
+// nunca sobrescrever o que o usuário informou. `campos` aceita as colunas
+// de PREENCHIMENTO_IA.
+const PREENCHIMENTO_IA = [
+  'id_tipo_acordao',
+  'id_tribunal',
+  'id_relator',
+  'id_desembargador1',
+  'id_desembargador2',
+  'data_acordao',
+];
+
+async function preencherCamposVazios(id, campos) {
+  const colunas = PREENCHIMENTO_IA.filter((c) => campos[c] !== undefined && campos[c] !== null);
+  if (colunas.length === 0) return findById(id);
+
+  const setClause = colunas.map((c, i) => `${c} = COALESCE(${c}, $${i + 1})`).join(', ');
+  await pool.query(`UPDATE acordao SET ${setClause} WHERE id_acordao = $${colunas.length + 1}`, [
+    ...colunas.map((c) => campos[c]),
+    id,
+  ]);
+  return findById(id);
+}
+
+module.exports = {
+  findByProcesso,
+  findById,
+  create,
+  update,
+  remove,
+  linkAnalise,
+  updateReformaSentenca,
+  preencherCamposVazios,
+};

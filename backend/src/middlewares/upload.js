@@ -9,11 +9,7 @@ const ALLOWED_MIME_TYPES = new Set([
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 
-// memoryStorage: o arquivo nunca é gravado em disco. Fica só em
-// req.file.buffer (RAM) durante a requisição e é descartado ao final -
-// necessário porque o filesystem do Render/Vercel é efêmero (seção 24.15
-// do escopo do projeto) e porque não queremos reter documentos jurídicos
-// originais além do estritamente necessário para extrair o texto.
+// memoryStorage: o arquivo nunca é gravado em disco, só em req.file.buffer
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_FILE_SIZE_BYTES },
@@ -28,10 +24,7 @@ const upload = multer({
 
 const uploadDecisionFile = upload.single('arquivo');
 
-// multer reporta erros via callback (err) em vez de lançar exceção
-// síncrona; este wrapper garante que esses erros cheguem ao
-// errorHandler central com status HTTP adequado (400/413), em vez de
-// virarem um 500 genérico ou ficarem sem tratamento.
+// converte erros de callback do multer em erros com status HTTP adequado
 function handleUpload(req, res, next) {
   uploadDecisionFile(req, res, (err) => {
     if (!err) {

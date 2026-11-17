@@ -5,7 +5,6 @@ const controller = require('../controllers/acordao.controller');
 const { acordaoSchema } = require('../validators/acordao.validator');
 const { analisarSchema } = require('../validators/analiseDecisao.validator');
 
-// Acesso direto por id.
 const router = Router();
 
 router.get('/:id', controller.getById);

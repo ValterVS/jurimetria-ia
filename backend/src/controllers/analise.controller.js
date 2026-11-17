@@ -11,7 +11,7 @@ function parseId(rawId) {
 }
 
 const getById = asyncHandler(async (req, res) => {
-  const analise = await decisionAnalysisService.getAnalysisById(parseId(req.params.id));
+  const analise = await decisionAnalysisService.getAnalysisById(parseId(req.params.id), req.empresa.id_empresa);
   res.json(analise);
 });
 

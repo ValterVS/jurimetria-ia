@@ -8,6 +8,8 @@ const router = Router();
 router.get('/resumo', validate(jurimetriaFiltersSchema, 'query'), controller.resumo);
 router.get('/pedidos', validate(jurimetriaFiltersSchema, 'query'), controller.pedidos);
 router.get('/julgadores', validate(jurimetriaFiltersSchema, 'query'), controller.julgadores);
+router.get('/juizes', validate(jurimetriaFiltersSchema, 'query'), controller.juizes);
+router.get('/desembargadores', validate(jurimetriaFiltersSchema, 'query'), controller.desembargadores);
 router.get('/tribunais', validate(jurimetriaFiltersSchema, 'query'), controller.tribunais);
 
 module.exports = router;

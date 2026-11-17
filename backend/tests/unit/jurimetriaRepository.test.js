@@ -74,6 +74,43 @@ test('jurimetria.repository - construção de SQL parametrizado', async (t) => {
     }
   });
 
+  await t.test('filtro de juiz em getPorPedido vale por pedido (resultado da sentença) e por processo (atuou)', async () => {
+    const { repo, calls, restore } = withMockedPool(async () => ({ rows: [] }));
+    try {
+      await repo.getPorPedido({ id_juiz: 8 });
+      const { sql, params } = calls[0];
+      assert.deepEqual(params, [8, 8]);
+      assert.equal(sql.includes('sj.id_juiz = $1'), true);
+      assert.equal(sql.includes('pp.id_juiz = $2'), true);
+      assert.equal(sql.includes('COUNT(pp.resultado_sentenca)'), true);
+    } finally {
+      restore();
+    }
+  });
+
+  await t.test('filtro de desembargador usa o resultado do acórdão', async () => {
+    const { repo, calls, restore } = withMockedPool(async () => ({ rows: [] }));
+    try {
+      await repo.getPorPedido({ id_desembargador: 3 });
+      assert.equal(calls[0].sql.includes('COUNT(pp.resultado_acordao)'), true);
+      assert.equal(calls[0].sql.includes('pp.id_desembargador = $2'), true);
+    } finally {
+      restore();
+    }
+  });
+
+  await t.test('fundamentos por julgador: parametrizado e limitado por grupo', async () => {
+    const { repo, calls, restore } = withMockedPool(async () => ({ rows: [] }));
+    try {
+      await repo.getFundamentosJuizes({ id_juiz: 4 });
+      assert.deepEqual(calls[0].params, [4, 3]);
+      assert.equal(calls[0].sql.includes('pp.fundamentacao_sentenca IS NOT NULL'), true);
+      assert.equal(calls[0].sql.includes('f.posicao <= $2'), true);
+    } finally {
+      restore();
+    }
+  });
+
   await t.test('getPorJulgador aplica o filtro de pedido só na condição do JOIN, não no WHERE', async () => {
     const { repo, calls, restore } = withMockedPool(async () => ({ rows: [] }));
     try {
@@ -87,16 +124,10 @@ test('jurimetria.repository - construção de SQL parametrizado', async (t) => {
     }
   });
 
-  await t.test('getResumo dispara as 6 queries agregadas e monta o objeto bruto esperado', async () => {
+  await t.test('getResumo dispara as 4 queries agregadas e monta o objeto bruto esperado', async () => {
     const { repo, calls, restore } = withMockedPool(async (sql) => {
       if (sql.includes('AS total_processos')) {
         return { rows: [{ total_processos: 3, valor_total_causas: '1500.00' }] };
-      }
-      if (sql.includes('FROM situacao_processo')) {
-        return { rows: [{ id_situacao: 1, nome_situacao: 'Em andamento', total: 2 }] };
-      }
-      if (sql.includes('FROM analise_decisao')) {
-        return { rows: [{ status: 'Concluída', total: 1 }] };
       }
       if (sql.includes('FROM processo_pedidos pp') && sql.includes('total_vinculados')) {
         return { rows: [{ total_vinculados: 4, total_analisados: 3, procedentes: 2, improcedentes: 1, parciais: 0 }] };
@@ -111,10 +142,8 @@ test('jurimetria.repository - construção de SQL parametrizado', async (t) => {
     });
     try {
       const resultado = await repo.getResumo({});
-      assert.equal(calls.length, 6);
+      assert.equal(calls.length, 4);
       assert.equal(resultado.totalProcessos.total_processos, 3);
-      assert.equal(resultado.porSituacao[0].nome_situacao, 'Em andamento');
-      assert.equal(resultado.analises[0].status, 'Concluída');
       assert.equal(resultado.pedidos.total_vinculados, 4);
       assert.equal(resultado.reformas.reformadas, 1);
       assert.deepEqual(resultado.porPeriodo, []);

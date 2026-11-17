@@ -2,9 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 const STATUS_EM_ANDAMENTO = ['Pendente', 'Em Análise'];
 
-// Faz polling de GET /api/analises/:id enquanto o status estiver
-// Pendente ou Em Análise, parando automaticamente ao chegar em
-// Concluída ou Erro (fluxo assíncrono descrito na seção 17 do escopo).
+// polling de GET /api/analises/:id até sair de Pendente/Em Análise
 export function useAnalisePolling(id, buscarAnalise, { intervalMs = 3000 } = {}) {
   const [analise, setAnalise] = useState(null);
   const [erro, setErro] = useState(null);

@@ -14,6 +14,9 @@ const paths = {
   sentenca: require.resolve(path.resolve(__dirname, '../../src/repositories/sentenca.repository.js')),
   acordao: require.resolve(path.resolve(__dirname, '../../src/repositories/acordao.repository.js')),
   processoPedido: require.resolve(path.resolve(__dirname, '../../src/repositories/processoPedido.repository.js')),
+  cadastros: require.resolve(path.resolve(__dirname, '../../src/repositories/cadastros.repository.js')),
+  autofill: require.resolve(path.resolve(__dirname, '../../src/ai/acordaoAutofill.js')),
+  pedido: require.resolve(path.resolve(__dirname, '../../src/repositories/pedido.repository.js')),
   aiProvider: require.resolve(path.resolve(__dirname, '../../src/ai/aiProvider.js')),
   service: require.resolve(path.resolve(__dirname, '../../src/ai/decisionAnalysisService.js')),
 };
@@ -27,7 +30,21 @@ function setupHarness({ analyzeDecisionImpl }) {
     sentencas: new Map(),
     acordaos: new Map(),
     pedidosVinculados: new Map(),
+    pedidosCatalogo: [
+      { id_pedido: 1, nome_pedido: 'Horas extras' },
+      { id_pedido: 2, nome_pedido: 'Danos morais' },
+      { id_pedido: 100, nome_pedido: 'Horas extras' },
+      { id_pedido: 200, nome_pedido: 'Danos morais' },
+    ],
+    catalogos: {
+      tribunal: [{ id_tribunal: 1, nome_tribunal: 'Tribunal Regional do Trabalho da 15ª Região' }],
+      desembargador: [{ id_desembargador: 33, nome_desembargador: 'Maria Souza', id_tribunal: 1 }],
+      tipoAcordao: [{ id_tipo_acordao: 1, tipo_acordao: 'Provido' }],
+    },
+    nextCatalogoId: 700,
     nextAnaliseId: 1,
+    nextVinculoId: 1000,
+    nextPedidoId: 5000,
   };
 
   // Importante: cada método retorna uma CÓPIA (`{ ...row }`), nunca a
@@ -106,18 +123,96 @@ function setupHarness({ analyzeDecisionImpl }) {
       row.reforma_sentenca = valor;
       return { ...row };
     },
+    // COALESCE: só preenche colunas vazias
+    preencherCamposVazios: async (id, campos) => {
+      const row = state.acordaos.get(id);
+      for (const [col, val] of Object.entries(campos)) {
+        if (val !== null && val !== undefined && (row[col] === null || row[col] === undefined)) row[col] = val;
+      }
+      return { ...row };
+    },
   };
 
+  const fakeCatalogo = (lista, idColumn, nameColumn, parentColumn = null) => ({
+    idColumn,
+    nameColumn,
+    parentColumn,
+    findAll: async ({ parentId } = {}) =>
+      lista.filter((i) => !(parentColumn && parentId) || i[parentColumn] === parentId).map((i) => ({ ...i })),
+    create: async (dados) => {
+      const novo = { [idColumn]: state.nextCatalogoId++, ...dados };
+      lista.push(novo);
+      return { ...novo };
+    },
+  });
+
+  const fakeCadastrosRepo = {
+    tribunalRepository: fakeCatalogo(state.catalogos.tribunal, 'id_tribunal', 'nome_tribunal'),
+    desembargadorRepository: fakeCatalogo(state.catalogos.desembargador, 'id_desembargador', 'nome_desembargador', 'id_tribunal'),
+    tipoAcordaoRepository: fakeCatalogo(state.catalogos.tipoAcordao, 'id_tipo_acordao', 'tipo_acordao'),
+  };
+
+  const achar = (idVinculo) => {
+    for (const lista of state.pedidosVinculados.values()) {
+      const item = lista.find((p) => p.id_processo_pedido === idVinculo);
+      if (item) return item;
+    }
+    return null;
+  };
+
+  // espelha a lógica SQL de processoPedido.repository.js
   const fakeProcessoPedidoRepo = {
-    findByProcesso: async (idProcesso) => state.pedidosVinculados.get(idProcesso) || [],
-    update: async (idProcesso, idPedido, { valor, resultado }) => {
+    findByProcesso: async (idProcesso) => (state.pedidosVinculados.get(idProcesso) || []).map((p) => ({ ...p })),
+    create: async (idProcesso, { id_pedido, descricao = null }) => {
       const lista = state.pedidosVinculados.get(idProcesso) || [];
-      const item = lista.find((p) => p.id_pedido === idPedido);
-      if (item) {
-        item.valor = valor;
-        item.resultado = resultado;
-      }
-      return item;
+      const catalogo = state.pedidosCatalogo.find((c) => c.id_pedido === id_pedido);
+      const item = {
+        id_processo_pedido: state.nextVinculoId++,
+        id_pedido,
+        nome_pedido: catalogo.nome_pedido,
+        descricao,
+        valor: null,
+        resultado: null,
+        id_juiz: null,
+        resultado_sentenca: null,
+        id_desembargador: null,
+        resultado_acordao: null,
+        reformado: null,
+      };
+      lista.push(item);
+      state.pedidosVinculados.set(idProcesso, lista);
+      return { ...item };
+    },
+    registrarSentenca: async (idVinculo, { valor, resultado, id_juiz, descricao, fundamentacao }) => {
+      const p = achar(idVinculo);
+      p.fundamentacao_sentenca = fundamentacao ?? p.fundamentacao_sentenca ?? null;
+      p.valor = valor ?? p.valor;
+      p.resultado_sentenca = resultado ?? null;
+      p.id_juiz = id_juiz ?? null;
+      p.descricao = p.descricao ?? descricao ?? null;
+      if (p.resultado_acordao == null) p.resultado = resultado ?? null;
+      else if (resultado != null) p.reformado = p.resultado_acordao !== resultado;
+    },
+    registrarAcordao: async (idVinculo, { valor, resultado, id_desembargador, descricao }) => {
+      const p = achar(idVinculo);
+      p.valor = valor ?? p.valor;
+      p.resultado_acordao = resultado ?? null;
+      p.id_desembargador = id_desembargador ?? null;
+      p.descricao = p.descricao ?? descricao ?? null;
+      p.resultado = resultado ?? p.resultado;
+      if (resultado != null && p.resultado_sentenca != null) p.reformado = resultado !== p.resultado_sentenca;
+    },
+    definirJuizNosPedidos: async (idVinculos, idJuiz) => {
+      for (const id of idVinculos) achar(id).id_juiz = idJuiz;
+    },
+  };
+
+  const fakePedidoRepo = {
+    findAll: async () => state.pedidosCatalogo.map((c) => ({ ...c })),
+    create: async ({ nome_pedido }) => {
+      const criado = { id_pedido: state.nextPedidoId++, nome_pedido };
+      state.pedidosCatalogo.push(criado);
+      return { ...criado };
     },
   };
 
@@ -130,9 +225,11 @@ function setupHarness({ analyzeDecisionImpl }) {
     mockModule(paths.sentenca, fakeSentencaRepo),
     mockModule(paths.acordao, fakeAcordaoRepo),
     mockModule(paths.processoPedido, fakeProcessoPedidoRepo),
+    mockModule(paths.pedido, fakePedidoRepo),
+    mockModule(paths.cadastros, fakeCadastrosRepo),
     mockModule(paths.aiProvider, fakeAiProviderModule),
   ];
-  clearCache(paths.service);
+  clearCache(paths.service, paths.autofill);
   const service = require(paths.service);
 
   return {
@@ -140,9 +237,42 @@ function setupHarness({ analyzeDecisionImpl }) {
     state,
     restore: () => {
       restores.forEach((r) => r());
-      clearCache(paths.service);
+      clearCache(paths.service, paths.autofill);
     },
   };
+}
+
+function vinculo(id, idPedido, nome, extra = {}) {
+  return {
+    id_processo_pedido: id,
+    id_pedido: idPedido,
+    nome_pedido: nome,
+    descricao: null,
+    valor: null,
+    resultado: null,
+    id_juiz: null,
+    resultado_sentenca: null,
+    id_desembargador: null,
+    resultado_acordao: null,
+    reformado: null,
+    ...extra,
+  };
+}
+
+function pedidoIA(nome, resultado, extra = {}) {
+  return {
+    nome,
+    descricao: null,
+    resultado,
+    valor_identificado: null,
+    fundamentacao_resumida: null,
+    trecho_relevante: null,
+    ...extra,
+  };
+}
+
+function novaAnalise(id) {
+  return { id_analise: id, status: 'Pendente' };
 }
 
 test('decisionAnalysisService.processAnalysis', async (t) => {
@@ -176,7 +306,7 @@ test('decisionAnalysisService.processAnalysis', async (t) => {
 
     try {
       state.sentencas.set(1, { id_sentenca: 1, id_processo: 10, id_analise: null });
-      state.pedidosVinculados.set(10, [{ id_pedido: 100, nome_pedido: 'Horas extras', valor: null, resultado: null }]);
+      state.pedidosVinculados.set(10, [vinculo(1, 100, 'Horas extras')]);
       state.analises.set(5, {
         id_analise: 5,
         status: 'Pendente',
@@ -382,45 +512,314 @@ test('decisionAnalysisService.processAnalysis', async (t) => {
     }
   });
 
-  await t.test('pedido identificado pela IA sem correspondência no catálogo do processo é ignorado (nunca cria pedido novo)', async () => {
-    const { service, state, restore } = setupHarness({
+  async function rodar({ tipoDecisao, idDecisao, idProcesso, pedidos, setup }) {
+    const h = setupHarness({
       analyzeDecisionImpl: async () => ({
-        data: validAnalysisPayload({
-          pedidos: [{ nome: 'Pedido Inexistente', resultado: 'procedente', valor_identificado: null, fundamentacao_resumida: null, trecho_relevante: null }],
-        }),
-        model: 'gpt-5.6-terra',
-        inputTokens: 5,
-        outputTokens: 5,
+        data: validAnalysisPayload({ tipo_documento: tipoDecisao, pedidos }),
+        model: 'x',
+        inputTokens: 1,
+        outputTokens: 1,
       }),
     });
-
     try {
-      state.sentencas.set(3, { id_sentenca: 3, id_processo: 40, id_analise: null });
-      state.pedidosVinculados.set(40, [{ id_pedido: 200, nome_pedido: 'Danos morais', valor: null, resultado: null }]);
-      state.analises.set(7, {
-        id_analise: 7,
-        status: 'Pendente',
-        plataforma_utilizada: null,
-        input_tokens: null,
-        output_tokens: null,
-        insights_json: null,
-        data_processamento: null,
-        erro_log: null,
+      setup(h.state);
+      h.state.analises.set(900, novaAnalise(900));
+      await h.service.processAnalysis({
+        tipoDecisao, idDecisao, idProcesso, idAnalise: 900, texto: 'Texto.', arquivo: undefined,
       });
+      return { state: h.state, lista: h.state.pedidosVinculados.get(idProcesso), restore: h.restore };
+    } catch (e) {
+      h.restore();
+      throw e;
+    }
+  }
 
-      await service.processAnalysis({
-        tipoDecisao: 'sentenca',
-        idDecisao: 3,
-        idProcesso: 40,
-        idAnalise: 7,
-        texto: 'Texto qualquer.',
-        arquivo: undefined,
+  await t.test('pedido encontrado pela IA e ainda não cadastrado é criado já com o resultado', async () => {
+    const { lista, state, restore } = await rodar({
+      tipoDecisao: 'sentenca', idDecisao: 3, idProcesso: 40,
+      pedidos: [pedidoIA('Adicional noturno', 'procedente', { valor_identificado: 800 })],
+      setup: (s) => {
+        s.sentencas.set(3, { id_sentenca: 3, id_processo: 40, id_juiz: 77, id_analise: null });
+        s.pedidosVinculados.set(40, [vinculo(1, 200, 'Danos morais')]);
+      },
+    });
+    try {
+      assert.equal(state.analises.get(900).status, 'Concluída');
+      assert.equal(lista.length, 2);
+      const novo = lista.find((p) => p.nome_pedido === 'Adicional Noturno');
+      assert.equal(novo.resultado, 'procedente');
+      assert.equal(novo.resultado_sentenca, 'procedente');
+      assert.equal(novo.valor, 800);
+      assert.equal(novo.id_juiz, 77);
+      // o pedido já cadastrado e não mencionado fica sem resultado, com o juiz
+      const antigo = lista.find((p) => p.nome_pedido === 'Danos morais');
+      assert.equal(antigo.resultado, null);
+      assert.equal(antigo.id_juiz, 77);
+      // criado também no catálogo
+      assert.ok(state.pedidosCatalogo.some((c) => c.nome_pedido === 'Adicional Noturno'));
+    } finally {
+      restore();
+    }
+  });
+
+  await t.test('pedido novo reaproveita o catálogo ignorando maiúsculas/acentos', async () => {
+    const { state, lista, restore } = await rodar({
+      tipoDecisao: 'sentenca', idDecisao: 3, idProcesso: 40,
+      pedidos: [pedidoIA('HORAS EXTRAS', 'improcedente')],
+      setup: (s) => {
+        s.sentencas.set(3, { id_sentenca: 3, id_processo: 40, id_juiz: null, id_analise: null });
+        s.pedidosVinculados.set(40, []);
+      },
+    });
+    try {
+      assert.equal(lista.length, 1);
+      assert.equal(state.pedidosCatalogo.filter((c) => c.nome_pedido.toLowerCase() === 'horas extras').length, 2);
+      assert.equal(state.pedidosCatalogo.length, 4); // nada novo criado
+    } finally {
+      restore();
+    }
+  });
+
+  await t.test('dois danos morais com fundamentos diferentes: ambos registrados, cada um com seu resultado', async () => {
+    const { lista, restore } = await rodar({
+      tipoDecisao: 'sentenca', idDecisao: 3, idProcesso: 40,
+      pedidos: [
+        pedidoIA('Danos morais', 'improcedente', { descricao: 'em razão da rescisão' }),
+        pedidoIA('Danos morais', 'procedente', { descricao: 'dano existencial', valor_identificado: 5000 }),
+      ],
+      setup: (s) => {
+        s.sentencas.set(3, { id_sentenca: 3, id_processo: 40, id_juiz: 77, id_analise: null });
+        // o usuário cadastrou apenas um "Danos morais", sem descrição
+        s.pedidosVinculados.set(40, [vinculo(1, 200, 'Danos morais')]);
+      },
+    });
+    try {
+      assert.equal(lista.length, 2);
+      const rescisao = lista.find((p) => p.descricao === 'em razão da rescisão');
+      const existencial = lista.find((p) => p.descricao === 'dano existencial');
+      assert.equal(rescisao.id_processo_pedido, 1); // reaproveitou o vínculo sem descrição
+      assert.equal(rescisao.resultado, 'improcedente');
+      assert.equal(existencial.resultado, 'procedente');
+      assert.equal(existencial.valor, 5000);
+      assert.equal(existencial.id_pedido, 200);
+    } finally {
+      restore();
+    }
+  });
+
+  await t.test('vínculos já descritos são casados por nome + descrição', async () => {
+    const { lista, restore } = await rodar({
+      tipoDecisao: 'sentenca', idDecisao: 3, idProcesso: 40,
+      pedidos: [
+        pedidoIA('Danos morais', 'procedente', { descricao: 'Dano existencial' }),
+        pedidoIA('Danos morais', 'improcedente', { descricao: 'Rescisão' }),
+      ],
+      setup: (s) => {
+        s.sentencas.set(3, { id_sentenca: 3, id_processo: 40, id_juiz: 77, id_analise: null });
+        s.pedidosVinculados.set(40, [
+          vinculo(1, 200, 'Danos morais', { descricao: 'Rescisão' }),
+          vinculo(2, 200, 'Danos morais', { descricao: 'Dano existencial' }),
+        ]);
+      },
+    });
+    try {
+      assert.equal(lista.length, 2);
+      assert.equal(lista.find((p) => p.id_processo_pedido === 1).resultado, 'improcedente');
+      assert.equal(lista.find((p) => p.id_processo_pedido === 2).resultado, 'procedente');
+    } finally {
+      restore();
+    }
+  });
+
+  await t.test('sentença: grava o juiz em todos os pedidos (os não mencionados pela IA ficam sem resultado)', async () => {
+    const { lista, restore } = await rodar({
+      tipoDecisao: 'sentenca', idDecisao: 11, idProcesso: 50,
+      pedidos: [pedidoIA('Horas extras', 'improcedente', { fundamentacao_resumida: 'Sem prova da sobrejornada.' })],
+      setup: (s) => {
+        s.sentencas.set(11, { id_sentenca: 11, id_processo: 50, id_juiz: 77, id_analise: null });
+        s.pedidosVinculados.set(50, [vinculo(1, 1, 'Horas extras'), vinculo(2, 2, 'Danos morais')]);
+      },
+    });
+    try {
+      const [horas, danos] = lista;
+      assert.equal(horas.resultado, 'improcedente');
+      assert.equal(horas.fundamentacao_sentenca, 'Sem prova da sobrejornada.');
+      assert.equal(horas.id_juiz, 77);
+      assert.equal(danos.resultado, null);
+      assert.equal(danos.id_juiz, 77);
+    } finally {
+      restore();
+    }
+  });
+
+  await t.test('acórdão: mantém pedido e juiz da 1ª instância, grava relator, muda o status e sinaliza reforma', async () => {
+    const { lista, restore } = await rodar({
+      tipoDecisao: 'acordao', idDecisao: 12, idProcesso: 51,
+      pedidos: [pedidoIA('Horas extras', 'procedente'), pedidoIA('Danos morais', 'improcedente')],
+      setup: (s) => {
+        s.acordaos.set(12, { id_acordao: 12, id_processo: 51, id_relator: 33, id_analise: null, reforma_sentenca: null });
+        s.pedidosVinculados.set(51, [
+          vinculo(1, 1, 'Horas extras', { resultado: 'improcedente', resultado_sentenca: 'improcedente', id_juiz: 77 }),
+          vinculo(2, 2, 'Danos morais', { resultado: 'improcedente', resultado_sentenca: 'improcedente', id_juiz: 77 }),
+        ]);
+      },
+    });
+    try {
+      const [horas, danos] = lista;
+      assert.equal(horas.id_juiz, 77);
+      assert.equal(horas.resultado_sentenca, 'improcedente');
+      assert.equal(horas.id_desembargador, 33);
+      assert.equal(horas.resultado_acordao, 'procedente');
+      assert.equal(horas.resultado, 'procedente');
+      assert.equal(horas.reformado, true);
+      assert.equal(danos.resultado, 'improcedente');
+      assert.equal(danos.reformado, false);
+      assert.equal(danos.id_juiz, 77);
+      assert.equal(lista.length, 2);
+    } finally {
+      restore();
+    }
+  });
+
+  await t.test('acórdão: pedido não mencionado não é alterado', async () => {
+    const { lista, restore } = await rodar({
+      tipoDecisao: 'acordao', idDecisao: 12, idProcesso: 51,
+      pedidos: [pedidoIA('Horas extras', 'procedente')],
+      setup: (s) => {
+        s.acordaos.set(12, { id_acordao: 12, id_processo: 51, id_relator: 33, id_analise: null, reforma_sentenca: null });
+        s.pedidosVinculados.set(51, [
+          vinculo(1, 1, 'Horas extras', { resultado: 'improcedente', resultado_sentenca: 'improcedente', id_juiz: 77 }),
+          vinculo(2, 2, 'Danos morais', { resultado: 'procedente', resultado_sentenca: 'procedente', id_juiz: 77 }),
+        ]);
+      },
+    });
+    try {
+      assert.equal(lista[1].resultado, 'procedente');
+      assert.equal(lista[1].id_desembargador, null);
+      assert.equal(lista[1].reformado, null);
+    } finally {
+      restore();
+    }
+  });
+
+  await t.test('sentença analisada depois do acórdão preserva o status do acórdão', async () => {
+    const { lista, restore } = await rodar({
+      tipoDecisao: 'sentenca', idDecisao: 11, idProcesso: 52,
+      pedidos: [pedidoIA('Horas extras', 'improcedente')],
+      setup: (s) => {
+        s.sentencas.set(11, { id_sentenca: 11, id_processo: 52, id_juiz: 77, id_analise: null });
+        s.pedidosVinculados.set(52, [
+          vinculo(1, 1, 'Horas extras', { resultado: 'procedente', resultado_acordao: 'procedente', id_desembargador: 33 }),
+        ]);
+      },
+    });
+    try {
+      assert.equal(lista[0].resultado, 'procedente');
+      assert.equal(lista[0].resultado_sentenca, 'improcedente');
+      assert.equal(lista[0].reformado, true);
+    } finally {
+      restore();
+    }
+  });
+
+  await t.test('acórdão: IA preenche todos os campos vazios (tipo, tribunal, relator, desembargadores, data)', async () => {
+    const h = setupHarness({
+      analyzeDecisionImpl: async () => ({
+        data: validAnalysisPayload({
+          tipo_documento: 'acordao',
+          processo: { numero_processo: null, tribunal: 'tribunal regional do trabalho da 15ª região', comarca: null, vara: null },
+          data_decisao: '2026-03-10',
+          pedidos: [pedidoIA('Horas extras', 'procedente')],
+          acordao: {
+            reforma_sentenca: true,
+            tipo_acordao: 'Parcialmente provido',
+            relator: 'MARIA SOUZA',
+            desembargador1: 'JOÃO DA SILVA',
+            desembargador2: null,
+          },
+        }),
+        model: 'x', inputTokens: 1, outputTokens: 1,
+      }),
+    });
+    try {
+      h.state.acordaos.set(40, {
+        id_acordao: 40, id_processo: 60, id_analise: null, reforma_sentenca: null,
+        id_tipo_acordao: null, id_tribunal: null, id_relator: null, id_desembargador1: null,
+        id_desembargador2: null, data_acordao: null,
       });
+      h.state.pedidosVinculados.set(60, [vinculo(1, 1, 'Horas extras', { resultado: 'improcedente', resultado_sentenca: 'improcedente', id_juiz: 77 })]);
+      h.state.analises.set(901, novaAnalise(901));
 
-      assert.equal(state.analises.get(7).status, 'Concluída');
-      // O pedido cadastrado não foi tocado, e nenhum pedido novo foi criado.
-      assert.equal(state.pedidosVinculados.get(40).length, 1);
-      assert.equal(state.pedidosVinculados.get(40)[0].resultado, null);
+      await h.service.processAnalysis({ tipoDecisao: 'acordao', idDecisao: 40, idProcesso: 60, idAnalise: 901, texto: 'Texto.' });
+
+      const a = h.state.acordaos.get(40);
+      assert.equal(h.state.analises.get(901).status, 'Concluída');
+      assert.equal(a.id_tribunal, 1); // casou com o tribunal existente (sem duplicar)
+      assert.equal(h.state.catalogos.tribunal.length, 1);
+      assert.equal(a.id_relator, 33); // casou com "Maria Souza" existente
+      assert.equal(h.state.catalogos.desembargador.length, 2);
+      const novo = h.state.catalogos.desembargador.find((d) => d.id_desembargador === a.id_desembargador1);
+      assert.equal(novo.nome_desembargador, 'João da Silva');
+      assert.equal(novo.id_tribunal, 1);
+      assert.equal(a.id_desembargador2, null);
+      assert.equal(a.data_acordao, '2026-03-10');
+      assert.equal(h.state.catalogos.tipoAcordao.length, 2); // "Parcialmente provido" criado
+      assert.equal(a.id_tipo_acordao, h.state.catalogos.tipoAcordao[1].id_tipo_acordao);
+      assert.equal(a.reforma_sentenca, true);
+      // o relator preenchido pela IA é o julgador de 2º grau do pedido
+      assert.equal(h.state.pedidosVinculados.get(60)[0].id_desembargador, 33);
+    } finally {
+      h.restore();
+    }
+  });
+
+  await t.test('acórdão: campos já informados pelo usuário nunca são sobrescritos pela IA', async () => {
+    const h = setupHarness({
+      analyzeDecisionImpl: async () => ({
+        data: validAnalysisPayload({
+          tipo_documento: 'acordao',
+          data_decisao: '2026-03-10',
+          pedidos: [],
+          acordao: { reforma_sentenca: null, tipo_acordao: 'Provido', relator: 'Outro Nome', desembargador1: null, desembargador2: null },
+        }),
+        model: 'x', inputTokens: 1, outputTokens: 1,
+      }),
+    });
+    try {
+      h.state.acordaos.set(41, {
+        id_acordao: 41, id_processo: 61, id_analise: null, reforma_sentenca: null,
+        id_tipo_acordao: 5, id_tribunal: null, id_relator: 33, id_desembargador1: null,
+        id_desembargador2: null, data_acordao: '2025-01-02',
+      });
+      h.state.analises.set(902, novaAnalise(902));
+
+      await h.service.processAnalysis({ tipoDecisao: 'acordao', idDecisao: 41, idProcesso: 61, idAnalise: 902, texto: 'Texto.' });
+
+      const a = h.state.acordaos.get(41);
+      assert.equal(a.id_tipo_acordao, 5);
+      assert.equal(a.id_relator, 33);
+      assert.equal(a.data_acordao, '2025-01-02');
+      assert.equal(h.state.catalogos.desembargador.length, 1); // "Outro Nome" nem foi cadastrado
+    } finally {
+      h.restore();
+    }
+  });
+
+  await t.test('pedido cadastrado com descrição diferente é reaproveitado quando é o único do nome', async () => {
+    const { lista, restore } = await rodar({
+      tipoDecisao: 'sentenca', idDecisao: 3, idProcesso: 40,
+      pedidos: [pedidoIA('Danos morais', 'procedente', { descricao: 'dano existencial', valor_identificado: 3000 })],
+      setup: (s) => {
+        s.sentencas.set(3, { id_sentenca: 3, id_processo: 40, id_juiz: 77, id_analise: null });
+        s.pedidosVinculados.set(40, [vinculo(1, 200, 'Danos morais', { descricao: 'Rescisão indireta' })]);
+      },
+    });
+    try {
+      assert.equal(lista.length, 1);
+      assert.equal(lista[0].id_processo_pedido, 1);
+      assert.equal(lista[0].descricao, 'Rescisão indireta'); // cadastro do usuário mantido
+      assert.equal(lista[0].resultado, 'procedente');
+      assert.equal(lista[0].valor, 3000);
     } finally {
       restore();
     }

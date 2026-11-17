@@ -17,7 +17,22 @@
 -- Uso:
 --   psql "$DATABASE_URL" -f database/schema.sql
 --   psql "$DATABASE_URL" -f database/seed.sql
+--
+-- IMPORTANTE sobre login: os processos abaixo são vinculados a uma
+-- "empresa de demonstração" (seed@jurimetria.local) cujo senha_hash é só
+-- um marcador - NÃO dá para logar com ela (nenhuma senha bate com esse
+-- hash). Para ver estes dados de exemplo já logado no sistema, cadastre
+-- uma empresa de verdade pela tela de cadastro e depois rode:
+--   UPDATE processos SET id_empresa = (SELECT id_empresa FROM empresa WHERE email = 'seu@email-cadastrado.com')
+--   WHERE id_empresa = (SELECT id_empresa FROM empresa WHERE email = 'seed@jurimetria.local');
 -- ============================================================
+
+-- ==========================
+-- Empresa de demonstração (ver aviso acima - login não funciona com ela)
+-- ==========================
+
+INSERT INTO empresa (cnpj, nome_empresa, nome_responsavel, cpf_responsavel, email, senha_hash, email_verificado) VALUES
+    ('00.000.000/0001-00', 'Empresa Demonstração (seed)', 'Responsável Demonstração', '00000000000', 'seed@jurimetria.local', 'SEED_SEM_LOGIN_USE_O_CADASTRO', TRUE);
 
 -- ==========================
 -- Catálogos institucionais
@@ -26,7 +41,8 @@
 INSERT INTO tribunal (nome_tribunal) VALUES
     ('Tribunal de Justiça de São Paulo'),
     ('Tribunal Regional do Trabalho da 15ª Região'),
-    ('Superior Tribunal de Justiça');
+    ('Superior Tribunal de Justiça')
+ON CONFLICT (nome_tribunal) DO NOTHING; -- a lista padrão já vem do schema.sql
 
 INSERT INTO comarca (nome_comarca, id_tribunal) VALUES
     ('Lins', (SELECT id_tribunal FROM tribunal WHERE nome_tribunal = 'Tribunal de Justiça de São Paulo')),
@@ -86,8 +102,9 @@ INSERT INTO partes (nome_parte, cpf_cnpj, endereco) VALUES
 -- Processos
 -- ==========================
 
-INSERT INTO processos (numero_processo, categoria, id_tribunal, id_comarca, id_vara, data_distribuicao, valor_causa, id_situacao, id_juiz) VALUES
+INSERT INTO processos (id_empresa, numero_processo, categoria, id_tribunal, id_comarca, id_vara, data_distribuicao, valor_causa, id_situacao, id_juiz) VALUES
     (
+        (SELECT id_empresa FROM empresa WHERE email = 'seed@jurimetria.local'),
         '1000001-11.2024.8.26.0320', 'Cível',
         (SELECT id_tribunal FROM tribunal WHERE nome_tribunal = 'Tribunal de Justiça de São Paulo'),
         (SELECT id_comarca FROM comarca WHERE nome_comarca = 'Lins'),
@@ -97,6 +114,7 @@ INSERT INTO processos (numero_processo, categoria, id_tribunal, id_comarca, id_v
         (SELECT id_juiz FROM juiz WHERE nome_juiz = 'Ana Paula Ferreira')
     ),
     (
+        (SELECT id_empresa FROM empresa WHERE email = 'seed@jurimetria.local'),
         '1000002-22.2024.8.26.0320', 'Cível',
         (SELECT id_tribunal FROM tribunal WHERE nome_tribunal = 'Tribunal de Justiça de São Paulo'),
         (SELECT id_comarca FROM comarca WHERE nome_comarca = 'Lins'),
@@ -106,6 +124,7 @@ INSERT INTO processos (numero_processo, categoria, id_tribunal, id_comarca, id_v
         (SELECT id_juiz FROM juiz WHERE nome_juiz = 'Marcos Antônio Souza')
     ),
     (
+        (SELECT id_empresa FROM empresa WHERE email = 'seed@jurimetria.local'),
         '1000003-33.2023.5.15.0025', 'Trabalhista',
         (SELECT id_tribunal FROM tribunal WHERE nome_tribunal = 'Tribunal Regional do Trabalho da 15ª Região'),
         (SELECT id_comarca FROM comarca WHERE nome_comarca = 'Campinas'),
@@ -115,6 +134,7 @@ INSERT INTO processos (numero_processo, categoria, id_tribunal, id_comarca, id_v
         (SELECT id_juiz FROM juiz WHERE nome_juiz = 'Camila Rodrigues')
     ),
     (
+        (SELECT id_empresa FROM empresa WHERE email = 'seed@jurimetria.local'),
         '1000004-44.2024.8.26.0071', 'Cível',
         (SELECT id_tribunal FROM tribunal WHERE nome_tribunal = 'Tribunal de Justiça de São Paulo'),
         (SELECT id_comarca FROM comarca WHERE nome_comarca = 'Bauru'),
@@ -247,6 +267,13 @@ VALUES (
     NULL,
     (SELECT id_tipo_sentenca FROM tipo_sentenca WHERE tipo_sentenca = 'Sentença de mérito')
 );
+
+-- Juiz que proferiu a sentença analisada, gravado em cada pedido do processo
+-- (é o que o sistema faz sozinho ao concluir uma análise de sentença).
+UPDATE processo_pedidos pp
+SET id_juiz = s.id_juiz, resultado_sentenca = pp.resultado
+FROM sentenca s
+WHERE s.id_processo = pp.id_processo AND s.id_analise IS NOT NULL;
 
 -- ==========================
 -- Análise pendente - demonstra o estado "Pendente" (fila de processamento)

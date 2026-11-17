@@ -13,41 +13,39 @@ function parseId(rawId, label) {
 
 const listByProcesso = asyncHandler(async (req, res) => {
   const idProcesso = parseId(req.params.id, 'Processo');
-  const items = await sentencaService.listByProcesso(idProcesso);
+  const items = await sentencaService.listByProcesso(idProcesso, req.empresa.id_empresa);
   res.json(items);
 });
 
 const create = asyncHandler(async (req, res) => {
   const idProcesso = parseId(req.params.id, 'Processo');
-  const created = await sentencaService.create(idProcesso, req.body);
+  const created = await sentencaService.create(idProcesso, req.body, req.empresa.id_empresa);
   res.status(201).json(created);
 });
 
 const getById = asyncHandler(async (req, res) => {
   const id = parseId(req.params.id, 'Sentença');
-  const item = await sentencaService.getById(id);
+  const item = await sentencaService.getById(id, req.empresa.id_empresa);
   res.json(item);
 });
 
 const update = asyncHandler(async (req, res) => {
   const id = parseId(req.params.id, 'Sentença');
-  const updated = await sentencaService.update(id, req.body);
+  const updated = await sentencaService.update(id, req.body, req.empresa.id_empresa);
   res.json(updated);
 });
 
 const remove = asyncHandler(async (req, res) => {
   const id = parseId(req.params.id, 'Sentença');
-  await sentencaService.remove(id);
+  await sentencaService.remove(id, req.empresa.id_empresa);
   res.status(204).send();
 });
 
-// POST /api/sentencas/:id/analisar - dispara a análise por IA (Fase 7).
-// Responde 202 imediatamente com a análise em status Pendente; o
-// processamento de verdade acontece em segundo plano (ver
-// ai/decisionAnalysisService.js). O frontend acompanha via polling em
-// GET /api/analises/:id.
+// POST /api/sentencas/:id/analisar - dispara a análise por IA em segundo
+// plano; frontend acompanha via polling em GET /api/analises/:id.
 const analisar = asyncHandler(async (req, res) => {
   const id = parseId(req.params.id, 'Sentença');
+  await sentencaService.getById(id, req.empresa.id_empresa);
   const analise = await decisionAnalysisService.startAnalysis({
     tipoDecisao: 'sentenca',
     idDecisao: id,

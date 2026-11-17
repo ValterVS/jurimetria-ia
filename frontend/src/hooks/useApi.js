@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-// Hook genérico de data-fetching: chama `fetchFn` sempre que algo em `deps`
-// mudar, expondo {data, loading, error, reload}. `error` já vem traduzido
-// para uma mensagem amigável (ver interceptor em services/api.js).
+// hook genérico de data-fetching: expõe {data, loading, error, reload}
 export function useApi(fetchFn, deps = []) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
