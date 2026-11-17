@@ -153,14 +153,14 @@ export default function ResumoSection({ filtros }) {
 
       {!filtros.id_pedido && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <Card title="Pedidos com maior chance de procedência">
+          <Card title="Pedidos com maior índice de procedência">
             {maisProcedentes.length === 0 ? (
               <EmptyState title="Dados insuficientes" description={`Precisa de pelo menos ${AMOSTRA_RANKING} decisões por pedido.`} />
             ) : (
               <ResultadoBarras linhas={maisProcedentes.map(paraLinha)} />
             )}
           </Card>
-          <Card title="Pedidos com maior chance de improcedência">
+          <Card title="Pedidos com maior índice de improcedência">
             {maisImprocedentes.length === 0 ? (
               <EmptyState title="Dados insuficientes" description={`Precisa de pelo menos ${AMOSTRA_RANKING} decisões por pedido.`} />
             ) : (
