@@ -15,7 +15,12 @@ app.set('trust proxy', 1);
 app.use(helmet());
 
 // CORS: só as origens explicitamente configuradas. Nunca "*" em produção.
-const allowedOrigins = [process.env.FRONTEND_URL, 'http://localhost:5173'].filter(Boolean);
+// FRONTEND_URL aceita mais de uma origem separada por vírgula; a barra final
+// é ignorada (o navegador envia a origem sem ela).
+const allowedOrigins = [
+  ...(process.env.FRONTEND_URL || '').split(',').map((o) => o.trim().replace(/\/+$/, '')),
+  'http://localhost:5173',
+].filter(Boolean);
 
 app.use(
   cors({

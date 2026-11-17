@@ -52,7 +52,41 @@ function layoutEmail(conteudoHtml) {
   </div>`;
 }
 
+// Provedores de nuvem como o plano gratuito do Render bloqueiam as portas SMTP
+// (25/465/587). Com BREVO_API_KEY o envio vai por HTTPS (porta 443), que não
+// é bloqueada. Sem ela, usa SMTP (desenvolvimento local, Gmail etc).
+async function enviarViaBrevo({ to, subject, html }) {
+  const remetente = process.env.EMAIL_FROM || process.env.SMTP_FROM || process.env.SMTP_USER;
+  if (!remetente) {
+    throw httpError(503, 'Defina EMAIL_FROM (e-mail remetente validado na Brevo) no servidor.');
+  }
+
+  const resposta = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'api-key': process.env.BREVO_API_KEY,
+      'content-type': 'application/json',
+      accept: 'application/json',
+    },
+    body: JSON.stringify({
+      sender: { name: 'Jurimetria IA', email: remetente },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+    }),
+  });
+
+  if (!resposta.ok) {
+    const detalhe = (await resposta.text().catch(() => '')).slice(0, 200);
+    throw httpError(502, `Falha no envio de e-mail (Brevo ${resposta.status}) ${detalhe}`.trim());
+  }
+}
+
 async function enviarEmail({ to, subject, html }) {
+  if (process.env.BREVO_API_KEY) {
+    return enviarViaBrevo({ to, subject, html });
+  }
+
   const transporte = getTransporter();
   const from = process.env.SMTP_FROM || process.env.SMTP_USER;
   await transporte.sendMail({ from: `"Jurimetria IA" <${from}>`, to, subject, html });

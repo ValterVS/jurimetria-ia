@@ -130,7 +130,7 @@ async function esqueciSenha({ email }) {
   const token = gerarTokenAleatorio();
   await redefinicaoSenhaRepository.create(empresa.id_empresa, hashToken(token), daquiAMinutos(TOKEN_RESET_VALIDADE_MINUTOS));
 
-  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const baseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim().replace(/\/+$/, '');
   const link = `${baseUrl}/redefinir-senha?token=${token}`;
   await enviarLinkRedefinicaoSenha(empresa, link);
 }
