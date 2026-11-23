@@ -101,6 +101,8 @@ function setupHarness({ analyzeDecisionImpl }) {
       const row = state.sentencas.get(id);
       return row ? { ...row } : null;
     },
+    findByProcesso: async (idProcesso) =>
+      [...state.sentencas.values()].filter((x) => x.id_processo === idProcesso).map((x) => ({ ...x })),
     linkAnalise: async (id, idAnalise) => {
       const row = state.sentencas.get(id);
       row.id_analise = idAnalise;
@@ -676,6 +678,33 @@ test('decisionAnalysisService.processAnalysis', async (t) => {
       assert.equal(danos.reformado, false);
       assert.equal(danos.id_juiz, 77);
       assert.equal(lista.length, 2);
+    } finally {
+      restore();
+    }
+  });
+
+  await t.test('acórdão: pedidos novos (e sem juiz) recebem o juiz da sentença do processo, sem resultado de 1º grau', async () => {
+    const { lista, restore } = await rodar({
+      tipoDecisao: 'acordao', idDecisao: 12, idProcesso: 70,
+      pedidos: [pedidoIA('Honorários advocatícios', 'improcedente'), pedidoIA('Horas extras', 'improcedente')],
+      setup: (s) => {
+        s.sentencas.set(5, { id_sentenca: 5, id_processo: 70, id_juiz: 77, id_analise: null });
+        s.acordaos.set(12, { id_acordao: 12, id_processo: 70, id_relator: 33, id_analise: null, reforma_sentenca: null });
+        s.pedidosVinculados.set(70, [
+          vinculo(1, 1, 'Horas extras', { resultado: 'improcedente', resultado_sentenca: 'improcedente', id_juiz: 77 }),
+          vinculo(2, 2, 'Danos morais'), // cadastrado, sem juiz e não mencionado no acórdão
+        ]);
+      },
+    });
+    try {
+      const honorarios = lista.find((p) => p.nome_pedido === 'Honorários Advocatícios');
+      assert.equal(honorarios.id_desembargador, 33);
+      assert.equal(honorarios.resultado_acordao, 'improcedente');
+      assert.equal(honorarios.id_juiz, 77); // juiz de 1º grau preservado/registrado
+      assert.equal(honorarios.resultado_sentenca, null);
+      assert.equal(lista.find((p) => p.id_processo_pedido === 2).id_juiz, 77);
+      // quem já tinha juiz e resultado de 1º grau não é alterado
+      assert.equal(lista.find((p) => p.id_processo_pedido === 1).resultado_sentenca, 'improcedente');
     } finally {
       restore();
     }

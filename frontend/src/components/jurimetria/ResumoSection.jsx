@@ -54,13 +54,15 @@ export default function ResumoSection({ filtros }) {
 
   // rankings só fazem sentido quando há mais de um pedido na tela
   const candidatos = (porPedido.data || []).filter((p) => p.total_analisados >= AMOSTRA_RANKING);
-  const maisProcedentes = [...candidatos]
+  // cada pedido entra só no ranking do resultado que predomina nele (empates
+  // ficam de fora), para as duas listas nunca repetirem o mesmo pedido
+  const maisProcedentes = candidatos
+    .filter((p) => p.percentual_procedencia > p.percentual_improcedencia)
     .sort((a, b) => b.percentual_procedencia - a.percentual_procedencia || b.total_analisados - a.total_analisados)
-    .filter((p) => p.procedentes > 0)
     .slice(0, TAMANHO_RANKING);
-  const maisImprocedentes = [...candidatos]
+  const maisImprocedentes = candidatos
+    .filter((p) => p.percentual_improcedencia > p.percentual_procedencia)
     .sort((a, b) => b.percentual_improcedencia - a.percentual_improcedencia || b.total_analisados - a.total_analisados)
-    .filter((p) => p.improcedentes > 0)
     .slice(0, TAMANHO_RANKING);
 
   const reformas = data.reformas_segundo_grau;

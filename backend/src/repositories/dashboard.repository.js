@@ -56,37 +56,51 @@ async function getTopPedidos(idEmpresa, limite = 10) {
   return rows;
 }
 
-// Condenação e benefício. O valor de condenação de cada processo vem da
-// análise de IA (valores_identificados.valor_condenacao) da decisão mais
-// recente que o trouxe: o acórdão prevalece sobre a sentença.
-// Benefício = valor da causa - condenação, só nos processos com condenação
-// identificada (sem ela, o benefício seria igual ao valor da causa inteiro).
+// Condenação e benefício.
+// Para cada processo vale a decisão ANALISADA mais recente (o acórdão prevalece
+// sobre a sentença):
+//   - se a análise trouxe valor de condenação, usa esse valor;
+//   - se o resultado geral foi improcedente, a condenação é 0 (o benefício é o
+//     valor da causa inteiro);
+//   - nos demais casos o valor é desconhecido e o processo fica fora do cálculo.
+// Processos ainda sem decisão analisada também ficam de fora.
+// Benefício = valor da causa - condenação, nos processos considerados.
 async function getCondenacao(idEmpresa) {
   const { rows } = await pool.query(
-    `WITH cond AS (
+    `WITH ultima AS (
        SELECT
          p.valor_causa,
          COALESCE(
-           (SELECT (ad.insights_json->'valores_identificados'->>'valor_condenacao')::numeric
+           (SELECT ad.insights_json
             FROM acordao a
             JOIN analise_decisao ad ON ad.id_analise = a.id_analise
-            WHERE a.id_processo = p.id_processo
-              AND ad.insights_json->'valores_identificados'->>'valor_condenacao' IS NOT NULL
+            WHERE a.id_processo = p.id_processo AND ad.insights_json IS NOT NULL
             ORDER BY a.data_acordao DESC NULLS LAST, a.id_acordao DESC
             LIMIT 1),
-           (SELECT (ad.insights_json->'valores_identificados'->>'valor_condenacao')::numeric
+           (SELECT ad.insights_json
             FROM sentenca s
             JOIN analise_decisao ad ON ad.id_analise = s.id_analise
-            WHERE s.id_processo = p.id_processo
-              AND ad.insights_json->'valores_identificados'->>'valor_condenacao' IS NOT NULL
+            WHERE s.id_processo = p.id_processo AND ad.insights_json IS NOT NULL
             ORDER BY s.id_sentenca DESC
             LIMIT 1)
-         ) AS valor_condenacao
+         ) AS analise
        FROM processos p
        WHERE p.id_empresa = $1
+     ),
+     cond AS (
+       SELECT
+         valor_causa,
+         CASE
+           WHEN analise IS NULL THEN NULL
+           WHEN analise->'valores_identificados'->>'valor_condenacao' IS NOT NULL
+             THEN (analise->'valores_identificados'->>'valor_condenacao')::numeric
+           WHEN analise->>'resultado_geral' = 'improcedente' THEN 0
+           ELSE NULL
+         END AS valor_condenacao
+       FROM ultima
      )
      SELECT
-       COUNT(*) FILTER (WHERE valor_condenacao IS NOT NULL)::int AS processos_com_condenacao,
+       COUNT(*) FILTER (WHERE valor_condenacao IS NOT NULL)::int AS processos_no_calculo,
        COALESCE(SUM(valor_condenacao), 0)::numeric AS valor_total_condenacao,
        COALESCE(SUM(valor_causa - valor_condenacao)
          FILTER (WHERE valor_condenacao IS NOT NULL AND valor_causa IS NOT NULL), 0)::numeric AS valor_total_beneficio

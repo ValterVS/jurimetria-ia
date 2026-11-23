@@ -52,7 +52,7 @@ export default function DashboardPage() {
               <KpiCard
                 label="Valor total de condenação"
                 value={formatarMoeda(data.valor_total_condenacao)}
-                hint={`${data.processos_com_condenacao} processo(s) com condenação identificada`}
+                hint={`${data.processos_no_calculo} de ${data.total_processos} processo(s) com decisão analisada`}
               />
               <KpiCard
                 label="Total de benefícios"
@@ -125,8 +125,8 @@ export default function DashboardPage() {
             </div>
 
             <p className="text-xs text-slate-400">
-              O benefício considera apenas os processos com valor de condenação identificado pela análise das decisões
-              (acórdão, quando houver; senão a sentença).
+              Condenação e benefício consideram só os processos com decisão analisada (o acórdão, quando houver; senão a
+              sentença). Processo julgado improcedente conta com condenação zero, ou seja, o valor da causa inteiro é benefício.
             </p>
           </>
         )}

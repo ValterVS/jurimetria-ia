@@ -84,8 +84,15 @@ function encontrarVinculo(vinculos, usados, pedidoIA, { exato, pedidosIA }) {
 //  - SENTENÇA (1º grau): grava resultado_sentenca e o juiz; pedidos não
 //    mencionados pela IA ficam sem resultado para esse juiz.
 //  - ACÓRDÃO (2º grau): grava resultado_acordao e o relator, atualiza o status
-//    e sinaliza a reforma, sem tocar no juiz nem no resultado da sentença.
-async function applyPedidosResults(idProcesso, pedidosAnalisados, { tipoDecisao, idJuiz = null, idDesembargador = null } = {}) {
+//    e sinaliza a reforma, sem tocar no resultado da sentença nem no juiz já
+//    registrado. Pedidos que ainda não tinham juiz (ex.: criados pelo próprio
+//    acórdão) recebem o juiz da sentença do processo (`idJuizPrimeiroGrau`), com
+//    resultado de 1º grau em branco.
+async function applyPedidosResults(
+  idProcesso,
+  pedidosAnalisados,
+  { tipoDecisao, idJuiz = null, idDesembargador = null, idJuizPrimeiroGrau = null } = {}
+) {
   const pedidosIA = Array.isArray(pedidosAnalisados) ? pedidosAnalisados : [];
   const vinculos = [...(await processoPedidoRepository.findByProcesso(idProcesso))];
   const usados = new Set();
@@ -147,6 +154,17 @@ async function applyPedidosResults(idProcesso, pedidosAnalisados, { tipoDecisao,
     const naoMencionados = vinculos.filter((v) => !usados.has(v.id_processo_pedido)).map((v) => v.id_processo_pedido);
     await processoPedidoRepository.definirJuizNosPedidos(naoMencionados, idJuiz);
   }
+
+  if (tipoDecisao === 'acordao' && idJuizPrimeiroGrau) {
+    const semJuiz = vinculos.filter((v) => v.id_juiz == null).map((v) => v.id_processo_pedido);
+    await processoPedidoRepository.definirJuizNosPedidos(semJuiz, idJuizPrimeiroGrau);
+  }
+}
+
+// Juiz de 1º grau do processo: o da sentença mais recente cadastrada.
+async function juizDaSentencaDoProcesso(idProcesso) {
+  const sentencas = await sentencaRepository.findByProcesso(idProcesso);
+  return sentencas.find((s) => s.id_juiz)?.id_juiz ?? null;
 }
 
 async function applyReformaSentenca(idAcordao, reformaSentencaIA) {
@@ -187,6 +205,7 @@ async function processAnalysis({ tipoDecisao, idDecisao, idProcesso, idAnalise, 
       tipoDecisao,
       idJuiz: tipoDecisao === 'sentenca' ? decisao?.id_juiz ?? null : null,
       idDesembargador: tipoDecisao === 'acordao' ? decisao?.id_relator ?? null : null,
+      idJuizPrimeiroGrau: tipoDecisao === 'acordao' ? await juizDaSentencaDoProcesso(idProcesso) : null,
     });
 
     if (tipoDecisao === 'acordao') {

@@ -13,9 +13,10 @@ async function getDashboard(idEmpresa) {
     total_processos: totais.total_processos,
     valor_total_causas: Number(totais.valor_total_causas),
     valor_total_condenacao: Number(condenacao.valor_total_condenacao),
-    // valor da causa menos condenação, só onde a condenação foi identificada
+    // valor da causa menos condenação nos processos com decisão analisada
+    // (improcedente = condenação 0)
     valor_total_beneficio: Number(condenacao.valor_total_beneficio),
-    processos_com_condenacao: condenacao.processos_com_condenacao,
+    processos_no_calculo: condenacao.processos_no_calculo,
     processos_por_categoria: porCategoria,
     processos_por_situacao: porSituacao,
     top_pedidos: topPedidos,

@@ -52,8 +52,8 @@ test('dashboard.service - monta o panorama convertendo numerics para número', a
     if (sql.includes('FROM situacao_processo')) return { rows: [{ id_situacao: 1, nome_situacao: 'Em andamento', total: 3 }] };
     if (sql.includes('GROUP BY 1')) return { rows: [{ categoria: 'Trabalhista', total: 4 }] };
     if (sql.includes('FROM processo_pedidos')) return { rows: [{ id_pedido: 1, nome_pedido: 'Horas extras', total_processos: 3 }] };
-    if (sql.includes('WITH cond')) {
-      return { rows: [{ processos_com_condenacao: 2, valor_total_condenacao: '30000', valor_total_beneficio: '45000.25' }] };
+    if (sql.includes('WITH ultima')) {
+      return { rows: [{ processos_no_calculo: 2, valor_total_condenacao: '30000', valor_total_beneficio: '45000.25' }] };
     }
     throw new Error('query inesperada');
   });
@@ -63,7 +63,7 @@ test('dashboard.service - monta o panorama convertendo numerics para número', a
     assert.equal(d.valor_total_causas, 100000.5);
     assert.equal(d.valor_total_condenacao, 30000);
     assert.equal(d.valor_total_beneficio, 45000.25);
-    assert.equal(d.processos_com_condenacao, 2);
+    assert.equal(d.processos_no_calculo, 2);
     assert.equal(d.processos_por_categoria[0].categoria, 'Trabalhista');
     assert.equal(d.top_pedidos[0].total_processos, 3);
   } finally {
